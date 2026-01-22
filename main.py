@@ -3,17 +3,22 @@ import requests
 import yt_dlp
 from urllib.parse import urlparse, unquote
 
-# --- Configuration ---
+# --- Secrets Check (Logs me dikhega ki secrets mile ya nahi) ---
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
+
+print("--- DEBUG INFO ---")
+print(f"Telegram Token Found: {'YES' if TELEGRAM_BOT_TOKEN else 'NO'}")
+print(f"Chat ID Found: {'YES' if TELEGRAM_CHAT_ID else 'NO'}")
+print(f"Webhook URL Found: {'YES' if WEBHOOK_URL else 'NO'}")
+print("------------------")
 
 FILES_DIR = "downloads"
 LINKS_FILE = 'link.txt'
 HISTORY_FILE = 'history.txt'
 
 def get_filename_from_url(url):
-    """Fallback: Agar yt-dlp title na de paye to URL se filename nikalna"""
     path = urlparse(url).path
     filename = unquote(os.path.basename(path))
     if not filename:
@@ -21,84 +26,86 @@ def get_filename_from_url(url):
     return filename
 
 def download_video(url):
-    """Direct Download Link se video download aur Title extract karta hai"""
-    # Folder create karein agar nahi hai
     if not os.path.exists(FILES_DIR):
         os.makedirs(FILES_DIR)
 
-    # yt-dlp options for direct links
     ydl_opts = {
         'format': 'best',
-        'outtmpl': f'{FILES_DIR}/%(title)s.%(ext)s', # Original filename use karega
+        'outtmpl': f'{FILES_DIR}/%(title)s.%(ext)s',
         'quiet': True,
         'no_warnings': True,
-        'restrictfilenames': True, # Special characters hatane ke liye
+        'restrictfilenames': True,
     }
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Metadata extract karein (Title nikalne ke liye)
+            print(f"Attempting to download: {url}")
             info = ydl.extract_info(url, download=True)
-            
-            # File path aur Title nikalein
             filename = ydl.prepare_filename(info)
-            
-            # Agar direct file hai to title filename hi hota hai usually
             title = info.get('title')
             
-            # Agar title empty hai ya URL jaisa dikh raha hai, to URL se filename nikalo
             if not title or title.startswith('http'):
                 title = get_filename_from_url(url)
                 
             return filename, title
             
     except Exception as e:
-        print(f"yt-dlp failed, trying fallback method: {e}")
+        print(f"❌ Download Error: {e}")
         return None, None
 
 def upload_to_catbox(file_path):
-    """Catbox.moe par upload karta hai"""
     url = "https://catbox.moe/user/api.php"
     try:
+        print(f"Uploading file size: {os.path.getsize(file_path) / (1024*1024):.2f} MB")
         with open(file_path, 'rb') as f:
             data = {'reqtype': 'fileupload', 'userhash': ''}
             files = {'fileToUpload': f}
-            print("Uploading to Catbox...")
             response = requests.post(url, data=data, files=files)
             
         if response.status_code == 200:
             return response.text
         else:
-            print(f"Catbox Error: {response.text}")
+            print(f"❌ Catbox Upload Failed. Status: {response.status_code}")
+            print(f"Response: {response.text}")
             return None
     except Exception as e:
-        print(f"Upload Error: {e}")
+        print(f"❌ Upload Exception: {e}")
         return None
 
 def send_notification(catbox_link, title):
-    """Telegram aur Webhook par same Title/Caption ke sath bhejta hai"""
-    
-    # Caption wahi hoga jo video ka title/filename tha
     caption = f"🎬 **{title}**\n\n🔗 **Download:** {catbox_link}"
     
-    # 1. Telegram
+    # 1. Telegram Debugging
     if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
         tg_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        requests.post(tg_url, json={
-            'chat_id': TELEGRAM_CHAT_ID, 
-            'text': caption, 
-            'parse_mode': 'Markdown'
-        })
-        print("Telegram Notification Sent.")
+        try:
+            resp = requests.post(tg_url, json={
+                'chat_id': TELEGRAM_CHAT_ID, 
+                'text': caption, 
+                'parse_mode': 'Markdown'
+            })
+            if resp.status_code == 200:
+                print("✅ Telegram Message Sent!")
+            else:
+                print(f"❌ Telegram Fail: {resp.text}")
+        except Exception as e:
+            print(f"❌ Telegram Error: {e}")
+    else:
+        print("⚠️ Skipping Telegram: Token or Chat ID missing.")
 
-    # 2. Webhook
+    # 2. Webhook Debugging
     if WEBHOOK_URL:
-        requests.post(WEBHOOK_URL, json={
-            'video_url': catbox_link, 
-            'title': title,
-            'caption': caption
-        })
-        print("Webhook Notification Sent.")
+        try:
+            resp = requests.post(WEBHOOK_URL, json={
+                'video_url': catbox_link, 
+                'title': title,
+                'caption': caption
+            })
+            print(f"✅ Webhook Status: {resp.status_code}")
+        except Exception as e:
+            print(f"❌ Webhook Error: {e}")
+    else:
+        print("⚠️ Skipping Webhook: URL missing.")
 
 def main():
     if not os.path.exists(HISTORY_FILE):
@@ -114,36 +121,35 @@ def main():
     with open(LINKS_FILE, 'r') as f:
         links = [line.strip() for line in f if line.strip()]
 
+    if not links:
+        print("No links found in link.txt")
+
     for link in links:
         if link in history:
-            print(f"Skipping: {link}")
+            print(f"Skipping (History match): {link}")
             continue
         
-        print(f"Processing Direct Link: {link}")
+        print(f"Processing: {link}")
         
-        # Step 1: Download
         file_path, title = download_video(link)
         
         if file_path and os.path.exists(file_path):
-            print(f"Downloaded: {title}")
+            print(f"Downloaded successfully: {title}")
             
-            # Step 2: Upload
             catbox_url = upload_to_catbox(file_path)
             
             if catbox_url:
-                print(f"Catbox Link: {catbox_url}")
-                
-                # Step 3: Notify (Same Title/Caption)
+                print(f"Catbox URL Generated: {catbox_url}")
                 send_notification(catbox_url, title)
                 
-                # Update History
                 with open(HISTORY_FILE, 'a') as f:
                     f.write(link + '\n')
+            else:
+                print("❌ Upload failed, notification skipped.")
             
-            # Cleanup
             os.remove(file_path)
         else:
-            print("Download Failed.")
+            print("❌ Download Failed.")
 
 if __name__ == "__main__":
     main()
