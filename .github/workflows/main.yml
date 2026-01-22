@@ -1,0 +1,50 @@
+name: Aarvi page 
+
+on:
+  # 1. Daily Schedule (Rozana chalne ke liye)
+  schedule:
+    # Ye niche wala time UTC mein hai. '0 0 * * *' ka matlab hai roz raat 12:00 UTC par chalega.
+    # India (IST) mein ye subah ke 5:30 AM baje chalega.
+    - cron: '0 0 * * *'
+  
+  # 2. Manual Trigger (Jab aap khud button dabakar chalana chahein)
+  workflow_dispatch:
+
+  # 3. Jab aap link.txt file update karein tab bhi chale
+  push:
+    paths:
+      - 'link.txt'
+
+jobs:
+  run-daily-bot:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # History file update karne ke liye zaroori hai
+
+    steps:
+      - name: Repository Checkout
+        uses: actions/checkout@v3
+
+      - name: Python Setup
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Downloader Script
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+        run: python main.py
+
+      - name: Update History File
+        run: |
+          git config --global user.name "Daily Bot"
+          git config --global user.email "bot@github.com"
+          git add history.txt
+          # Agar koi naya video process hua hai to hi commit karega
+          git commit -m "Daily process update: history.txt" || echo "No new videos processed"
+          git push
