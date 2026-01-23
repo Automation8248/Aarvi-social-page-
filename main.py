@@ -23,42 +23,86 @@ HASHTAGS = "\n#viral #trending #motivation #quotes #hindi #reels #explore"
 def get_filename_from_url(url):
     path = urlparse(url).path
     filename = unquote(os.path.basename(path))
-    if not filename: return "video"
-    return filename
+import os
+import requests
+import yt_dlp
+import cv2
+import easyocr
+import warnings
+from urllib.parse import urlparse, unquote
 
-def generate_ai_caption(video_path):
+# Warnings ignore
+warnings.filterwarnings("ignore")
+
+# --- Configuration ---
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_TOKEN')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+WEBHOOK_URL = os.getenv('WEBHOOK_URL')
+
+FILES_DIR = "downloads"
+LINKS_FILE = 'link.txt'
+HISTORY_FILE = 'history.txt'
+
+# --- SEO Hashtags ---
+HASHTAGS = "\n#viral #trending #motivation #quotes #hindi #reels #explore"
+
+def get_visual_caption_3_words(video_path):
     """
-    Video se audio nikal kar Hindi text generate karta hai (First 2 lines only)
+    Video ka screenshot leta hai, Hindi text padhta hai, 
+    aur pehle 3 words return karta hai.
     """
-    print("🤖 AI generating caption (Listening to audio)...")
+    print("👁️ Analyzing Video Frames for Text...")
+    
     try:
-        # Load Whisper Model (Tiny is fast for CPU)
-        model = whisper.load_model("tiny")
+        # 1. Video Load karein
+        cap = cv2.VideoCapture(video_path)
         
-        # Transcribe (Hindi Language Force)
-        result = model.transcribe(video_path, language="hi")
-        full_text = result['text'].strip()
+        # 2. Frame Calculate karein (Video ke 20% hisse par jayenge taaki text dikhe)
+        # Aksar shuru mein fade-in hota hai, isliye thoda aage badh kar padhenge
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        target_frame = int(total_frames * 0.20) 
         
-        # Logic: Split text by full stops or pipe (Hindi danda)
-        # Hum bas shuru ke 2 sentence uthayenge
-        sentences = full_text.replace("।", ".").split(".")
-        
-        # Top 2 lines lein, agar text chhota hai to pura le lein
-        if len(sentences) >= 2:
-            short_text = sentences[0].strip() + ".\n" + sentences[1].strip() + "..."
-        else:
-            short_text = full_text
+        cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
+        ret, frame = cap.read()
+        cap.release()
+
+        if not ret:
+            return "Video Status..."
+
+        # 3. EasyOCR se Text Read karein (Hindi + English)
+        # 'gpu=False' rakha hai kyunki GitHub Actions par GPU nahi hota
+        reader = easyocr.Reader(['hi', 'en'], gpu=False, verbose=False)
+        result = reader.readtext(frame, detail=0) # Sirf text chahiye
+
+        # 4. Text Processing (First 3 Words)
+        if result:
+            # Saare alag-alag tukdo ko ek line mein jodo
+            full_text = " ".join(result)
             
-        return short_text
+            # Words mein todo
+            words = full_text.split()
+            
+            # Pehle 3 words nikalo
+            if len(words) >= 3:
+                short_caption = f"{words[0]} {words[1]} {words[2]}..."
+            elif len(words) > 0:
+                short_caption = " ".join(words) + "..."
+            else:
+                short_caption = "New Video..."
+                
+            return short_caption
+        else:
+            return "Watch this..." # Agar koi text detect nahi hua
+            
     except Exception as e:
-        print(f"⚠️ AI Caption Failed: {e}")
-        return "Video Alert!" # Fallback agar AI fail ho jaye
+        print(f"⚠️ OCR Error: {e}")
+        return "New Reel..."
 
 def download_video(url):
     if not os.path.exists(FILES_DIR): os.makedirs(FILES_DIR)
     
     ydl_opts = {
-        'format': 'best[ext=mp4]', # MP4 format ensure karein
+        'format': 'best[ext=mp4]',
         'outtmpl': f'{FILES_DIR}/%(title)s.%(ext)s',
         'quiet': True,
         'restrictfilenames': True,
@@ -75,26 +119,24 @@ def download_video(url):
         return None
 
 def send_video_to_telegram(file_path, caption):
-    """
-    Direct Video File upload karta hai Telegram par
-    """
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("⚠️ Telegram Token missing.")
         return
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
     
-    # Format Caption with dots and hashtags
+    # Format: Caption + Dots + Hashtags
     formatted_caption = f"{caption}\n.\n.\n.\n.\n.{HASHTAGS}"
     
-    print("🚀 Sending video to Telegram...")
+    print(f"🚀 Sending with Caption: {caption}")
+    
     try:
         with open(file_path, 'rb') as video_file:
             files = {'video': video_file}
             data = {
                 'chat_id': TELEGRAM_CHAT_ID,
                 'caption': formatted_caption,
-                'parse_mode': 'HTML' # Simple formatting allowed
+                'parse_mode': 'HTML'
             }
             response = requests.post(url, files=files, data=data)
             
@@ -118,25 +160,23 @@ def main():
             print(f"Skipping: {link}")
             continue
         
-        # 1. Download Video
+        # 1. Download
         file_path = download_video(link)
         
         if file_path and os.path.exists(file_path):
             
-            # 2. Generate Caption using AI
-            ai_text = generate_ai_caption(file_path)
-            print(f"📝 Generated Caption: {ai_text}")
+            # 2. OCR Logic (Visual Text Extraction)
+            visual_caption = get_visual_caption_3_words(file_path)
             
-            # 3. Send Video + Caption to Telegram
-            send_video_to_telegram(file_path, ai_text)
+            # 3. Send
+            send_video_to_telegram(file_path, visual_caption)
             
-            # 4. Save History
+            # 4. History Update
             with open(HISTORY_FILE, 'a') as f: f.write(link + '\n')
             
-            # Cleanup
             os.remove(file_path)
         else:
-            print("❌ File not found after download.")
+            print("❌ Download Failed.")
 
 if __name__ == "__main__":
     main()
