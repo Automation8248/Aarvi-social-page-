@@ -3,6 +3,8 @@ import requests
 import sys
 import glob
 import re
+import time
+import random
 from deep_translator import GoogleTranslator
 
 # --- CONFIGURATION ---
@@ -14,6 +16,13 @@ WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 
 SEO_TAGS = ["#reels", "#trending", "#viral", "#explore", "#love", "#shayari"]
 FORBIDDEN_WORDS = ["virtualaarvi", "aarvi", "video by", "uploaded by", "subscribe", "channel"]
+
+# User Agents list to trick servers
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+]
 
 def get_next_video():
     processed_urls = []
@@ -64,62 +73,41 @@ def generate_hashtags(original_tags):
         else: break
     return " ".join(final_tags[:6])
 
-# --- NEW: SSSInstagram SCRAPER ---
-def fetch_from_sssinstagram(url):
-    print("🔄 Connecting to SSSInstagram (Attempting Bypass)...")
-    
-    api_url = "https://sssinstagram.com/request"
+# --- SCRAPER FUNCTIONS ---
+
+def fetch_generic_extractor(url, domain, referer):
+    print(f"🔄 Trying Source: {domain} ...")
+    api_url = f"https://{domain}/api/ajaxSearch"
     
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Content-Type": "application/json",
-        "Origin": "https://sssinstagram.com",
-        "Referer": "https://sssinstagram.com/",
+        "User-Agent": random.choice(USER_AGENTS),
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "Origin": f"https://{domain}",
+        "Referer": referer,
     }
     
-    payload = {
-        "link": url,
-        "token": ""
-    }
-
+    data = {"q": url, "t": "media", "lang": "en"}
+    
     try:
-        # Request
-        print("📡 Sending Request...")
-        response = requests.post(api_url, json=payload, headers=headers, timeout=20)
-        
-        if response.status_code != 200:
-            print(f"⚠️ SSSInstagram blocked us. Status: {response.status_code}")
+        resp = requests.post(api_url, data=data, headers=headers, timeout=15)
+        if resp.status_code != 200:
+            print(f"⚠️ {domain} Blocked us (Status: {resp.status_code})")
             return None
-        
-        data = response.json()
-        
-        # HTML Response ke andar link dhoondhna
-        if 'data' in data and 'html' in data['data']:
-            html = data['data']['html']
             
-            # Regex to find download link (Looking for href="...mp4")
-            match = re.search(r'href="(https?://[^"]+\.mp4[^"]*)"', html)
-            # Alternative Regex (SSS sometimes uses different structure)
-            if not match:
-                match = re.search(r'href="(https?://[^"]+googlevideo[^"]+)"', html)
-            if not match:
-                match = re.search(r'href="(https?://[^"]+cdninstagram[^"]+)"', html)
-
+        json_data = resp.json()
+        if 'data' in json_data:
+            html = json_data['data']
+            # Regex to find link
+            match = re.search(r'href="(https?://[^"]+)"', html)
             if match:
-                video_url = match.group(1).replace("&amp;", "&")
-                print("✅ Video Link Found!")
-                return video_url
-            else:
-                print("❌ HTML mila par Video Link nahi mila.")
-                # print(html[:300]) # Debugging
-                return None
-        else:
-            print("❌ Invalid API Response.")
-            return None
-
+                link = match.group(1).replace("&amp;", "&")
+                # Filter out junk links
+                if "instagram.com" not in link and "facebook.com" not in link:
+                    print(f"✅ Success from {domain}!")
+                    return link
     except Exception as e:
-        print(f"❌ Connection Failed: {e}")
-        return None
+        print(f"⚠️ Error on {domain}: {e}")
+    return None
 
 def download_video_data(url):
     print(f"⬇️ Processing: {url}")
@@ -128,19 +116,33 @@ def download_video_data(url):
         try: os.remove(f)
         except: pass
 
-    # --- USE SSSInstagram ---
-    video_download_url = fetch_from_sssinstagram(url)
+    video_download_url = None
     
+    # --- MULTI-SOURCE ATTACK PLAN ---
+    # Hum alag-alag websites try karenge jo shayad GitHub ko abhi tak block na kiye hon
+    
+    sources = [
+        ("reelssave.com", "https://reelssave.com/en"),
+        ("v3.igram.world", "https://igram.world/"),
+        ("snapinsta.app", "https://snapinsta.app/"),
+        ("fastdl.app", "https://fastdl.app/en")
+    ]
+    
+    for domain, referer in sources:
+        video_download_url = fetch_generic_extractor(url, domain, referer)
+        if video_download_url:
+            break
+        time.sleep(2) # Thoda wait taaki spam na lage
+
     if not video_download_url:
-        print("❌ Failed to fetch video link.")
+        print("❌ All Sources Failed. GitHub Server IP is totally blacklisted.")
         return None
     
     # Download File
     try:
         print("📥 Downloading Video File...")
-        file_headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-        }
+        # Headers needed to avoid 403 on the CDN
+        file_headers = {"User-Agent": random.choice(USER_AGENTS)}
         
         video_res = requests.get(video_download_url, headers=file_headers, stream=True)
         
@@ -149,7 +151,12 @@ def download_video_data(url):
             for chunk in video_res.iter_content(chunk_size=1024):
                 if chunk: f.write(chunk)
         
-        # Metadata
+        # Check if file is valid (not empty)
+        if os.path.getsize(dl_filename) < 1000:
+            print("❌ Downloaded file is too small (might be an error page).")
+            return None
+        
+        # Generic Metadata
         title = "Instagram Reel"
         hashtags = generate_hashtags([])
         final_hindi_text = "देखिए आज का वीडियो ✨"
