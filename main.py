@@ -13,7 +13,7 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 
-SEO_TAGS = ["#reels", "#trending", "#viral", "#explore", "#love", "#shayari"]
+SEO_TAGS = ["#reels", "#trending", "#viral", "#explore", "#love", "#shayari", "#instagram"]
 FORBIDDEN_WORDS = ["virtualaarvi", "aarvi", "video by", "uploaded by", "subscribe", "channel"]
 
 def get_next_video():
@@ -34,20 +34,16 @@ def get_next_video():
             return url
     return None
 
-def is_text_safe(text):
-    if not text: return False
-    lower_text = text.lower()
-    for word in FORBIDDEN_WORDS:
-        if word in lower_text:
-            return False
-    return True
-
 def translate_and_shorten(text):
     try:
         if not text or not text.strip(): return None
+        # Translate to Hindi
         translated = GoogleTranslator(source='auto', target='hi').translate(text)
+        # Remove forbidden words
+        if any(word in translated.lower() for word in FORBIDDEN_WORDS): return None
+        # Keep first 5 words
         words = translated.split()
-        return " ".join(words[:4])
+        return " ".join(words[:5])
     except: return None
 
 def generate_hashtags(original_tags):
@@ -55,40 +51,34 @@ def generate_hashtags(original_tags):
     if original_tags:
         for tag in original_tags:
             clean_tag = tag.replace(" ", "").lower()
-            if clean_tag not in ["virtualaarvi", "aarvi"] and f"#{clean_tag}" not in final_tags:
+            if clean_tag not in FORBIDDEN_WORDS and f"#{clean_tag}" not in final_tags:
                 final_tags.append(f"#{clean_tag}")
     for seo in SEO_TAGS:
-        if len(final_tags) < 6:
+        if len(final_tags) < 8:
             if seo not in final_tags: final_tags.append(seo)
         else: break
-    return " ".join(final_tags[:6])
+    return " ".join(final_tags[:8])
 
-# --- DIRECT INSTAGRAM DOWNLOADER (No 3rd Party) ---
+# --- DIRECT DOWNLOADER (Fake Android) ---
 def download_video_data(url):
-    print(f"⬇️ Processing Direct Link: {url}")
+    print(f"⬇️ Processing: {url}")
     
-    # Safai
     for f in glob.glob("temp_video*"):
         try: os.remove(f)
         except: pass
 
-    # --- MAGIC SETTINGS (Fake Android Client) ---
+    # Android Client Impersonation
     ydl_opts = {
         'format': 'best[ext=mp4]/best',
         'outtmpl': 'temp_video.%(ext)s',
         'quiet': True,
         'no_warnings': True,
         'ignoreerrors': True,
-        
-        # Ye sabse zaroori line hai:
-        # Hum bata rahe hain ki hum 'Android App' hain, GitHub nahi.
         'extractor_args': {
             'instagram': {
                 'impersonate': ['android']
             }
         },
-        
-        # Headers taaki block na ho
         'http_headers': {
             'User-Agent': 'Instagram 219.0.0.12.117 Android',
             'Accept-Language': 'en-US',
@@ -101,34 +91,23 @@ def download_video_data(url):
     hashtags = ""
 
     try:
-        print("⏳ Contacting Instagram Servers Directly...")
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Metadata extract karna
             info = ydl.extract_info(url, download=True)
-            
             if info:
-                print("✅ Direct Download Successful!")
-                title = info.get('title', '') or info.get('description', '') or "Instagram Reel"
+                title = info.get('title') or info.get('description') or "Reel"
                 hashtags = generate_hashtags(info.get('tags', []))
                 
-                # File dhoondhna
+                # File check
                 found_files = glob.glob("temp_video*")
                 video_files = [f for f in found_files if not f.endswith('.vtt')]
-                if video_files:
-                    dl_filename = video_files[0]
-                    
-                # Hindi Translation
+                if video_files: dl_filename = video_files[0]
+                
                 final_hindi_text = translate_and_shorten(title) or "देखिए आज का वीडियो ✨"
-            else:
-                print("❌ Instagram Server rejected the connection.")
-                return None
-
     except Exception as e:
-        print(f"❌ Direct Download Error: {e}")
+        print(f"❌ Error: {e}")
         return None
 
-    if not dl_filename:
-        return None
+    if not dl_filename: return None
 
     return {
         "filename": dl_filename,
@@ -139,10 +118,15 @@ def download_video_data(url):
     }
 
 def upload_to_catbox(filepath):
-    print("🚀 Uploading to Catbox...")
+    print("🚀 Uploading to Catbox (for Webhook)...")
     try:
         with open(filepath, "rb") as f:
-            response = requests.post("https://catbox.moe/user/api.php", data={"reqtype": "fileupload"}, files={"fileToUpload": f}, timeout=120)
+            response = requests.post(
+                "https://catbox.moe/user/api.php", 
+                data={"reqtype": "fileupload"}, 
+                files={"fileToUpload": f}, 
+                timeout=120
+            )
             if response.status_code == 200:
                 return response.text.strip()
     except: pass
@@ -150,23 +134,31 @@ def upload_to_catbox(filepath):
 
 def send_notifications(video_data, catbox_url):
     print("\n--- Sending Notifications ---")
-    tg_caption = f"{video_data['hindi_text']}\n.\n.\n.\n.\n.\n{video_data['hashtags']}"
+    tg_caption = f"{video_data['hindi_text']}\n.\n.\n.\n{video_data['hashtags']}"
     
-    # Telegram
+    # 1. Telegram (Sends VIDEO FILE)
     if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+        print("📤 Sending Video File to Telegram...")
         tg_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
         try:
             with open(video_data['filename'], 'rb') as video_file:
-                requests.post(tg_url, data={"chat_id": str(TELEGRAM_CHAT_ID), "caption": tg_caption}, files={'video': video_file})
+                payload = {"chat_id": str(TELEGRAM_CHAT_ID), "caption": tg_caption}
+                requests.post(tg_url, data=payload, files={'video': video_file})
                 print("✅ Telegram Sent!")
-        except: pass
+        except Exception as e: print(f"❌ Telegram Fail: {e}")
 
-    # Webhook
+    # 2. Webhook (Sends URL + Caption)
     if WEBHOOK_URL and catbox_url:
+        print("📤 Sending URL to Webhook...")
+        payload = {
+            "content": tg_caption, 
+            "video_url": catbox_url,
+            "original_post": video_data['original_url']
+        }
         try:
-            requests.post(WEBHOOK_URL, json={"content": tg_caption, "video_url": catbox_url})
+            requests.post(WEBHOOK_URL, json=payload)
             print("✅ Webhook Sent!")
-        except: pass
+        except Exception as e: print(f"❌ Webhook Fail: {e}")
 
 def update_history(url):
     with open(HISTORY_FILE, 'a') as f: f.write(url + '\n')
@@ -176,12 +168,15 @@ if __name__ == "__main__":
     if next_url:
         data = download_video_data(next_url)
         if data and data['filename']:
+            # Catbox upload is mandatory for Webhook
             catbox_link = upload_to_catbox(data['filename'])
+            
             send_notifications(data, catbox_link)
             update_history(next_url)
+            
             # Cleanup
             if os.path.exists(data['filename']): os.remove(data['filename'])
-            print("✅ Task Done.")
+            print("✅ Task Completed.")
     else:
-        print("💤 No new videos.")
-        sys.exit(0)
+        print("💤 No new videos found.")
+        sys.exit(0) # Exit with success code (0) even if no video
