@@ -65,48 +65,61 @@ def generate_hashtags(original_tags):
         else: break
     return " ".join(final_tags[:6])
 
-# --- NEW: PUBLER API FUNCTION (Free & No Login) ---
-def fetch_via_publer(url):
-    print("🔄 Connecting to Publer API (Bypassing GitHub Block)...")
+# --- NEW: SAVEIG WEB SCRAPER (Bypass Logic) ---
+def fetch_from_saveig(url):
+    print("🔄 Connecting to Downloader Website (Bypassing Instagram)...")
     
-    api_url = "https://app.publer.io/hooks/media"
+    # SaveIG Endpoint
+    api_url = "https://v3.saveig.app/api/ajaxSearch"
     
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Content-Type": "application/json",
-        "Referer": "https://publer.io/"
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "Origin": "https://saveig.app",
+        "Referer": "https://saveig.app/en",
     }
     
-    payload = {
-        "url": url,
-        "iphone": False
+    data = {
+        "q": url,
+        "t": "media",
+        "lang": "en"
     }
 
     try:
-        # Step 1: Send Request
-        response = requests.post(api_url, json=payload, headers=headers, timeout=20)
+        # Step 1: Request Video Link
+        response = requests.post(api_url, data=data, headers=headers, timeout=20)
         
         if response.status_code != 200:
-            print(f"⚠️ Publer API Error: {response.status_code}")
-            return None, None
+            print(f"⚠️ Downloader Site Error: {response.status_code}")
+            return None
             
-        data = response.json()
+        json_data = response.json()
         
-        # Step 2: Parse Response
-        # Publer returns a 'payload' list. We take the first video.
-        if 'payload' in data and isinstance(data['payload'], list):
-            for item in data['payload']:
-                if 'path' in item:
-                    video_url = item['path']
-                    caption = item.get('caption', 'Instagram Reel')
-                    return video_url, caption
-        
-        print("❌ Publer could not find the video.")
-        return None, None
+        # Step 2: Extract Link from HTML Response
+        # Response comes as JSON with HTML inside 'data' key
+        if 'data' in json_data:
+            html_content = json_data['data']
+            
+            # Regex to find the download link inside the HTML
+            # Looking for href that typically contains download params
+            match = re.search(r'href="(https?://[^"]+)"', html_content)
+            
+            if match:
+                video_url = match.group(1).replace("&amp;", "&")
+                print("✅ Video Link Extracted successfully!")
+                return video_url
+            else:
+                print("❌ Could not find download link in HTML response.")
+                # Debug print
+                # print(html_content[:200]) 
+                return None
+        else:
+            print("❌ Invalid response from downloader site.")
+            return None
 
     except Exception as e:
-        print(f"❌ Publer Connection Failed: {e}")
-        return None, None
+        print(f"❌ Connection Failed: {e}")
+        return None
 
 def download_video_data(url):
     print(f"⬇️ Processing: {url}")
@@ -115,14 +128,12 @@ def download_video_data(url):
         try: os.remove(f)
         except: pass
 
-    # --- USE PUBLER INSTEAD OF RAPID/COBALT ---
-    video_download_url, title = fetch_via_publer(url)
+    # --- USE SAVEIG SCRAPER ---
+    video_download_url = fetch_from_saveig(url)
     
     if not video_download_url:
         print("❌ Failed to fetch video link.")
         return None
-
-    print("✅ Video Link Found!")
     
     # Download File
     try:
@@ -139,8 +150,10 @@ def download_video_data(url):
             for chunk in video_res.iter_content(chunk_size=1024):
                 if chunk: f.write(chunk)
         
+        # Generic Metadata (Since scraping metadata is hard this way)
+        title = "Instagram Reel"
         hashtags = generate_hashtags([])
-        final_hindi_text = translate_and_shorten(title) or "देखिए आज का वीडियो ✨"
+        final_hindi_text = "देखिए आज का वीडियो ✨"
 
         return {
             "filename": dl_filename,
