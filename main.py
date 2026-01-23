@@ -1,11 +1,11 @@
 import os
 import requests
-import yt_dlp
 import sys
 import glob
 import re
 import time
 import random
+from bs4 import BeautifulSoup
 from deep_translator import GoogleTranslator
 
 # --- CONFIGURATION ---
@@ -18,11 +18,10 @@ WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 SEO_TAGS = ["#reels", "#trending", "#viral", "#explore", "#love", "#shayari"]
 FORBIDDEN_WORDS = ["virtualaarvi", "aarvi", "video by", "uploaded by", "subscribe", "channel"]
 
-# --- HUMAN EMULATION LOGIC ---
+# Real Browser Headers
 USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
 ]
 
 def get_next_video():
@@ -74,19 +73,96 @@ def generate_hashtags(original_tags):
         else: break
     return " ".join(final_tags[:6])
 
-# --- PROXY & IP MASKING LOGIC ---
-def get_free_proxies():
-    print("🛡️ Finding a working Proxy to hide GitHub IP...")
-    # Hum ek free list se proxies nikalenge
+def extract_shortcode(url):
     try:
-        resp = requests.get("https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=5000&country=all&ssl=all&anonymity=all")
-        if resp.status_code == 200:
-            proxies = resp.text.splitlines()
-            print(f"✅ Found {len(proxies)} proxies. Trying to find a live one...")
-            return proxies[:10] # Top 10 try karenge
-    except:
-        print("⚠️ Could not fetch proxy list.")
-    return []
+        clean_url = url.split('?')[0].rstrip('/')
+        parts = clean_url.split('/')
+        if 'reel' in parts: return parts[parts.index('reel') + 1]
+        if 'p' in parts: return parts[parts.index('p') + 1]
+        return parts[-1]
+    except: return None
+
+# --- STRATEGY 1: EMBED PAGE BYPASS (Pure Logic) ---
+def fetch_via_embed(shortcode):
+    print("🔄 Strategy 1: Attempting Embed Logic (Bypassing Main Page)...")
+    
+    # Instagram Embed URL (Ye aksar blocked nahi hota)
+    embed_url = f"https://www.instagram.com/p/{shortcode}/embed/captioned/"
+    
+    headers = {
+        "User-Agent": random.choice(USER_AGENTS),
+        "Referer": "https://www.instagram.com/",
+    }
+
+    try:
+        resp = requests.get(embed_url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            print(f"⚠️ Embed Page Blocked (Status: {resp.status_code})")
+            return None, None
+
+        # HTML mein video link dhoondhna
+        html = resp.text
+        
+        # Pattern 1: video_url inside JSON config
+        match = re.search(r'"video_url":"([^"]+)"', html)
+        if match:
+            video_url = match.group(1).replace("\\u0026", "&")
+            print("✅ Found video in Embed Code!")
+            return video_url, "Instagram Reel"
+            
+        # Pattern 2: mp4 in regular href
+        match_mp4 = re.search(r'href="([^"]+\.mp4[^"]*)"', html)
+        if match_mp4:
+            video_url = match_mp4.group(1).replace("&amp;", "&")
+            print("✅ Found mp4 link in Embed HTML!")
+            return video_url, "Instagram Reel"
+            
+        print("⚠️ Embed page loaded but no video found.")
+    except Exception as e:
+        print(f"⚠️ Embed Logic Error: {e}")
+    
+    return None, None
+
+# --- STRATEGY 2: CLEAN VIEWER (Imginn) ---
+def fetch_via_viewer(shortcode):
+    print("🔄 Strategy 2: Fetching via Clean Viewer (Imginn)...")
+    # Imginn ek downloader nahi, viewer hai. GitHub IP ispe chalta hai.
+    url = f"https://imginn.com/p/{shortcode}/"
+    headers = {"User-Agent": random.choice(USER_AGENTS)}
+    
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        if resp.status_code != 200:
+            return None, None
+            
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        
+        # Download button dhoondhna
+        video_url = None
+        
+        # Method A: Class 'download-btn'
+        btn = soup.find('a', {'class': 'download-btn'})
+        if btn and btn.get('href'):
+            video_url = btn['href']
+            
+        # Method B: Video Tag
+        if not video_url:
+            vid = soup.find('video')
+            if vid and vid.get('src'):
+                video_url = vid['src']
+        
+        if video_url:
+            print("✅ Success via Viewer Logic!")
+            # Caption
+            caption = "Instagram Reel"
+            desc = soup.find('p', {'class': 'desc'})
+            if desc: caption = desc.get_text().strip()
+            return video_url, caption
+            
+    except Exception as e:
+        print(f"⚠️ Viewer Logic Failed: {e}")
+        
+    return None, None
 
 def download_video_data(url):
     print(f"⬇️ Processing: {url}")
@@ -95,95 +171,53 @@ def download_video_data(url):
         try: os.remove(f)
         except: pass
 
-    # Get Proxies
-    proxy_list = get_free_proxies()
-    # Add 'None' at the end to try Direct connection as last resort
-    proxy_list.append(None) 
-    
-    dl_filename = None
-    title = "Instagram Reel"
-    final_hindi_text = ""
-    hashtags = ""
-
-    # Loop to try proxies until one works
-    for proxy in proxy_list:
-        if proxy:
-            print(f"🔄 Trying to mask IP with Proxy: {proxy}")
-        else:
-            print("⚠️ All proxies failed. Trying Direct Connection (Last Hope)...")
-
-        # Fake Browser Headers (Human Emulation)
-        user_agent = random.choice(USER_AGENTS)
-        
-        ydl_opts = {
-            'format': 'best',
-            'outtmpl': 'temp_video.%(ext)s',
-            'quiet': True,
-            'no_warnings': True,
-            'ignoreerrors': True,
-            'nocheckcertificate': True,
-            'geo_bypass': True,
-            
-            # --- HUMAN LOGIC START ---
-            'user_agent': user_agent,
-            'referer': 'https://www.instagram.com/',
-            'http_headers': {
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Sec-Fetch-User': '?1',
-                'Upgrade-Insecure-Requests': '1',
-            },
-            # Artificial Delay (Insaan turant click nahi karta)
-            'sleep_interval': random.randint(2, 5), 
-            # --- HUMAN LOGIC END ---
-        }
-        
-        # Proxy Add karna
-        if proxy:
-            ydl_opts['proxy'] = f"http://{proxy}"
-
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                
-                if info:
-                    # Success!
-                    print("✅ Download Successful!")
-                    title = info.get('title', '')
-                    desc = info.get('description', '')
-                    hashtags = generate_hashtags(info.get('tags', []))
-                    
-                    found_files = glob.glob("temp_video*")
-                    video_files = [f for f in found_files if not f.endswith('.vtt')]
-                    if video_files:
-                        dl_filename = video_files[0]
-                        
-                        # Caption Logic
-                        clean_title = re.sub(r'#\w+', '', title).strip()
-                        final_hindi_text = translate_and_shorten(clean_title)
-                        if not final_hindi_text and desc:
-                            clean_desc = desc.split('\n')[0]
-                            final_hindi_text = translate_and_shorten(clean_desc)
-                        
-                        if not final_hindi_text: final_hindi_text = "देखिए आज का वीडियो ✨"
-                        
-                        break # Loop tod do, kaam ho gaya
-        except Exception as e:
-            # print(f"❌ Failed with this IP: {e}")
-            pass # Agla proxy try karo
-            
-    if not dl_filename:
-        print("❌ Failed to download even after IP rotation.")
+    shortcode = extract_shortcode(url)
+    if not shortcode:
+        print("❌ Invalid URL format")
         return None
 
-    return {
-        "filename": dl_filename,
-        "title": title,
-        "hindi_text": final_hindi_text,
-        "hashtags": hashtags,
-        "original_url": url
-    }
+    # Step 1: Try Embed Logic (Pure Instagram)
+    video_download_url, title = fetch_via_embed(shortcode)
+    
+    # Step 2: Try Viewer Logic (If Step 1 fails)
+    if not video_download_url:
+        video_download_url, title = fetch_via_viewer(shortcode)
+
+    if not video_download_url:
+        print("❌ Both Logic Strategies Failed. GitHub IP is severely restricted.")
+        return None
+    
+    # Download File
+    try:
+        print("📥 Downloading Video File...")
+        file_headers = {"User-Agent": random.choice(USER_AGENTS)}
+        
+        video_res = requests.get(video_download_url, headers=file_headers, stream=True)
+        
+        dl_filename = "temp_video.mp4"
+        with open(dl_filename, 'wb') as f:
+            for chunk in video_res.iter_content(chunk_size=1024):
+                if chunk: f.write(chunk)
+        
+        # Validate File
+        if os.path.getsize(dl_filename) < 1000:
+            print("❌ Downloaded file is corrupted/empty.")
+            return None
+        
+        hashtags = generate_hashtags([])
+        final_hindi_text = translate_and_shorten(title) or "देखिए आज का वीडियो ✨"
+
+        return {
+            "filename": dl_filename,
+            "title": title,
+            "hindi_text": final_hindi_text,
+            "hashtags": hashtags,
+            "original_url": url
+        }
+
+    except Exception as e:
+        print(f"❌ File Download Error: {e}")
+        return None
 
 def upload_to_catbox(filepath):
     print("🚀 Uploading to Catbox...")
@@ -236,8 +270,5 @@ if __name__ == "__main__":
         send_notifications(data, catbox_link)
         update_history(next_url)
         if os.path.exists(data['filename']): os.remove(data['filename'])
-        for f in glob.glob("temp_video*.vtt"):
-            try: os.remove(f)
-            except: pass
         print("✅ Task Done.")
     else: sys.exit(1)
