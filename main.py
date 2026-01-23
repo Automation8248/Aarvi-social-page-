@@ -12,7 +12,7 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 
-# RapidAPI Credentials (Instagram120)
+# AAPKA RAPID API SETUP (Ye wahi hai jo aapne diya tha)
 RAPID_API_KEY = "1d87db308dmshd21171d762615b5p1368bejsnabb286989baf"
 RAPID_HOST = "instagram120.p.rapidapi.com"
 
@@ -38,6 +38,7 @@ def get_next_video():
     return None
 
 def is_text_safe(text):
+    if not text: return False
     lower_text = text.lower()
     for word in FORBIDDEN_WORDS:
         if word in lower_text:
@@ -53,27 +54,8 @@ def translate_and_shorten(text):
         return " ".join(words[:4])
     except: return None
 
-def extract_details(url):
-    # Extracts Username and Shortcode from URL
-    # Example: https://www.instagram.com/virtualaarvi/reel/DT0BUcACEYk/
-    try:
-        parts = url.rstrip('/').split('/')
-        shortcode = parts[-1]
-        # Username is usually 2 steps back from reel/p, or 3 from end
-        if 'reel' in parts:
-            idx = parts.index('reel')
-            username = parts[idx-1]
-        elif 'p' in parts:
-            idx = parts.index('p')
-            username = parts[idx-1]
-        else:
-            return None, None
-        return username, shortcode
-    except:
-        return None, None
-
 def generate_hashtags(original_tags):
-    final_tags = ["#aarvi"]
+    final_tags = ["#reels"]
     forbidden = ["virtualaarvi", "aarvi"]
     if original_tags:
         for tag in original_tags:
@@ -81,28 +63,50 @@ def generate_hashtags(original_tags):
             if clean_tag not in forbidden and f"#{clean_tag}" not in final_tags:
                 final_tags.append(f"#{clean_tag}")
     for seo in SEO_TAGS:
-        if len(final_tags) < 5:
+        if len(final_tags) < 6:
             if seo not in final_tags: final_tags.append(seo)
         else: break
-    return " ".join(final_tags[:5])
+    return " ".join(final_tags[:6])
+
+def extract_user_and_code(url):
+    # URL se Username aur ID nikalna
+    # Ex: https://www.instagram.com/virtualaarvi/reel/DT0BUcACEYk/
+    try:
+        clean_url = url.split('?')[0].rstrip('/')
+        parts = clean_url.split('/')
+        
+        shortcode = parts[-1] # Last wala ID hota hai
+        
+        # Username dhoondhna
+        username = None
+        if 'reel' in parts:
+            idx = parts.index('reel')
+            username = parts[idx-1]
+        elif 'p' in parts:
+            idx = parts.index('p')
+            username = parts[idx-1]
+            
+        return username, shortcode
+    except:
+        return None, None
 
 def download_video_data(url):
-    print(f"⬇️ Processing URL: {url}")
+    print(f"⬇️ Processing: {url}")
     
     for f in glob.glob("temp_video*"):
         try: os.remove(f)
         except: pass
 
-    # 1. Extract Username & Shortcode
-    username, target_shortcode = extract_details(url)
-    if not username or not target_shortcode:
-        print("❌ Error: Could not parse Username or ID from URL.")
+    # 1. Target Data Nikalo
+    username, target_code = extract_user_and_code(url)
+    if not username or not target_code:
+        print("❌ Error: URL se Username nahi mila. Make sure link format sahi hai.")
         return None
     
-    print(f"🔹 Target: User='{username}', Code='{target_shortcode}'")
+    print(f"🔍 Searching Video: User='{username}', ID='{target_code}'")
 
-    # 2. Call RapidAPI (Using the working 'posts' endpoint)
-    # We fetch the user's latest posts and look for our video in the list
+    # 2. RapidAPI se User ki Profile List mango
+    # Yeh endpoint aapke diye huye curl command wala hai
     api_url = f"https://{RAPID_HOST}/api/instagram/posts"
     
     headers = {
@@ -113,77 +117,71 @@ def download_video_data(url):
     
     payload = {
         "username": username,
-        "maxId": "" # Fetch latest page
+        "maxId": "" # First page
     }
 
     try:
-        print(f"📡 Calling API: {api_url} ...")
+        print("📡 Fetching Profile Posts via API...")
         response = requests.post(api_url, json=payload, headers=headers)
         
         if response.status_code != 200:
-            print(f"❌ API Error: {response.status_code} - {response.text}")
+            print(f"❌ API Error ({response.status_code}): {response.text}")
             return None
 
-        data = response.json()
+        # Data handle karna (List ho sakti hai ya dictionary)
+        api_data = response.json()
+        posts_list = []
         
-        # 3. Search for the specific video in the results
+        if isinstance(api_data, list):
+            posts_list = api_data
+        elif isinstance(api_data, dict):
+            if 'result' in api_data: posts_list = api_data['result']
+            elif 'data' in api_data: posts_list = api_data['data']
+        
+        # 3. List mein apna video dhoondho
         video_download_url = None
         title = "Instagram Reel"
         
-        # This structure depends on instagram120 response, usually it's a list
-        # We loop through all posts to find the one matching our 'target_shortcode'
-        posts_list = []
-        if isinstance(data, list): 
-            posts_list = data
-        elif 'result' in data: 
-            posts_list = data['result']
-        elif 'data' in data:
-            posts_list = data['data']
-            
-        found = False
+        print(f"📂 Scanning {len(posts_list)} recent posts...")
+        
         for post in posts_list:
-            # Check if this post matches our shortcode
-            # API might use 'code', 'shortcode', or 'pk'
-            code = post.get('code') or post.get('shortcode')
+            # ID match karo (API 'code' ya 'shortcode' use kar sakta hai)
+            post_code = post.get('code') or post.get('shortcode')
             
-            if code == target_shortcode:
-                found = True
-                print("✅ Found matching video in user's post list!")
+            if post_code == target_code:
+                print("✅ Match Found!")
                 
-                # Extract Video URL
+                # Video URL nikalo
                 if 'video_url' in post:
                     video_download_url = post['video_url']
-                elif 'video_versions' in post:
+                elif 'video_versions' in post and len(post['video_versions']) > 0:
                     video_download_url = post['video_versions'][0]['url']
                 
-                # Extract Caption
+                # Caption nikalo
                 if 'caption' in post:
-                    if isinstance(post['caption'], dict):
-                        title = post['caption'].get('text', title)
-                    else:
-                        title = str(post['caption'])
+                    cap = post['caption']
+                    if isinstance(cap, dict): title = cap.get('text', '')
+                    else: title = str(cap)
                 break
         
-        if not found:
-            print(f"⚠️ Video {target_shortcode} not found in {username}'s recent posts.")
-            # Fallback: If not found, maybe take the LATEST video if configured?
-            # For now, we return None to be safe.
-            return None
-
         if not video_download_url:
-            print("❌ Found post but no Video URL (maybe it's an image?).")
+            print(f"⚠️ Video ID '{target_code}' user ke latest posts mein nahi mila.")
             return None
 
         # 4. Download File
-        print("📥 Downloading video file...")
-        video_res = requests.get(video_download_url, stream=True)
+        print("📥 Downloading Video File...")
+        
+        # User-Agent header zaroori hai CDN ke liye
+        file_headers = {'User-Agent': 'Mozilla/5.0'}
+        video_res = requests.get(video_download_url, headers=file_headers, stream=True)
+        
         dl_filename = "temp_video.mp4"
         with open(dl_filename, 'wb') as f:
             for chunk in video_res.iter_content(chunk_size=1024):
                 if chunk: f.write(chunk)
         
         hashtags = generate_hashtags([])
-        final_hindi_text = translate_and_shorten(title) or "देखिए आज का वीडियो"
+        final_hindi_text = translate_and_shorten(title) or "देखिए आज का वीडियो ✨"
 
         return {
             "filename": dl_filename,
@@ -194,14 +192,14 @@ def download_video_data(url):
         }
 
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ System Error: {e}")
         return None
 
 def upload_to_catbox(filepath):
     print("🚀 Uploading to Catbox...")
     try:
         with open(filepath, "rb") as f:
-            response = requests.post("https://catbox.moe/user/api.php", data={"reqtype": "fileupload"}, files={"fileToUpload": f})
+            response = requests.post("https://catbox.moe/user/api.php", data={"reqtype": "fileupload"}, files={"fileToUpload": f}, timeout=60)
             if response.status_code == 200:
                 return response.text.strip()
             else: return None
