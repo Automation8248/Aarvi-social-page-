@@ -34,14 +34,12 @@ DEVICE_PROFILES = [
     # Z-Series (Fold/Flip)
     {"name": "Samsung Z Fold 5", "type": "android", "ua": "Instagram 310.0.0.20.115 Android (33/13; 420dpi; 1812x2176; samsung; SM-F946B; q2q; qcom; en_US; 510200500)"},
     {"name": "Samsung Z Flip 5", "type": "android", "ua": "Instagram 310.0.0.20.115 Android (33/13; 420dpi; 1080x2640; samsung; SM-F731B; b2q; qcom; en_US; 510200600)"},
-    # Note Series (Legacy)
-    {"name": "Samsung Note 20 Ultra", "type": "android", "ua": "Instagram 250.0.0.22.115 Android (31/11; 560dpi; 1440x3088; samsung; SM-N986B; c2; exynos; en_US; 389200100)"},
     # A-Series (Popular)
     {"name": "Samsung A54 5G", "type": "android", "ua": "Instagram 295.0.0.20.108 Android (33/13; 420dpi; 1080x2340; samsung; SM-A546E; s5e8835; exynos; en_IN; 489201100)"},
     {"name": "Samsung A34 5G", "type": "android", "ua": "Instagram 285.0.0.15.115 Android (33/13; 420dpi; 1080x2340; samsung; SM-A346E; mt6877; en_IN; 476500200)"},
     {"name": "Samsung A14 5G", "type": "android", "ua": "Instagram 280.0.0.12.112 Android (33/13; 400dpi; 1080x2408; samsung; SM-A146B; s5e8535; exynos; en_IN; 465400300)"},
     {"name": "Samsung A73 5G", "type": "android", "ua": "Instagram 275.0.0.18.110 Android (32/12; 420dpi; 1080x2400; samsung; SM-A736B; a73xq; qcom; en_US; 456700100)"},
-    # M/F Series (Online Exclusive)
+    # M/F Series
     {"name": "Samsung M34", "type": "android", "ua": "Instagram 290.0.0.16.118 Android (33/13; 420dpi; 1080x2340; samsung; SM-M346B; s5e8825; exynos; en_IN; 498700200)"},
     {"name": "Samsung F54", "type": "android", "ua": "Instagram 295.0.0.19.112 Android (33/13; 420dpi; 1080x2400; samsung; SM-E546B; s5e8835; exynos; en_IN; 501200100)"},
 
@@ -62,52 +60,38 @@ DEVICE_PROFILES = [
     {"name": "iPhone XS Max", "type": "ios", "ua": "Instagram 270.0.0.12.118 iPhone11,6 iOS 15_4"},
     {"name": "iPhone XR", "type": "ios", "ua": "Instagram 260.0.0.20.108 iPhone11,8 iOS 14_8"},
     {"name": "iPhone SE (2022)", "type": "ios", "ua": "Instagram 275.0.0.15.110 iPhone14,6 iOS 16_1"},
-    {"name": "iPhone 8 Plus", "type": "ios", "ua": "Instagram 250.0.0.10.115 iPhone10,5 iOS 14_6"},
-
+    
     # ==============================
     # 📱 XIAOMI / REDMI / POCO
     # ==============================
-    # Xiaomi (Flagship)
     {"name": "Xiaomi 14 Pro", "type": "android", "ua": "Instagram 315.0.0.22.115 Android (34/14; 560dpi; 1440x3200; Xiaomi; 23116PN5BC; shennong; qcom; en_US; 534500300)"},
     {"name": "Xiaomi 13 Ultra", "type": "android", "ua": "Instagram 300.0.0.15.118 Android (33/13; 560dpi; 1440x3200; Xiaomi; 2304FPN6DC; ishtar; qcom; en_US; 510200300)"},
-    {"name": "Xiaomi 12 Pro", "type": "android", "ua": "Instagram 280.0.0.18.112 Android (32/12; 560dpi; 1440x3200; Xiaomi; 2201122C; zeus; qcom; en_US; 476500400)"},
-    # Redmi Note Series
     {"name": "Redmi Note 13 Pro+", "type": "android", "ua": "Instagram 310.0.0.15.115 Android (33/13; 440dpi; 1220x2712; Xiaomi; 23090RA98I; zircon; mt6985; en_IN; 523400100)"},
     {"name": "Redmi Note 12 Pro", "type": "android", "ua": "Instagram 295.0.0.22.110 Android (33/13; 440dpi; 1080x2400; Xiaomi; 22101316C; ruby; mt6877; en_IN; 501200100)"},
-    {"name": "Redmi Note 11", "type": "android", "ua": "Instagram 270.0.0.16.118 Android (31/11; 440dpi; 1080x2400; Xiaomi; 2201117TI; spes; qcom; en_IN; 456700500)"},
     {"name": "Redmi 12 5G", "type": "android", "ua": "Instagram 290.0.0.14.112 Android (33/13; 400dpi; 1080x2460; Xiaomi; 23076RN4BI; sky; qcom; en_IN; 498500600)"},
-    # Poco Series
     {"name": "Poco F5", "type": "android", "ua": "Instagram 300.0.0.14.118 Android (33/13; 440dpi; 1080x2400; Xiaomi; 23049PCD8G; marble; qcom; en_IN; 510200100)"},
     {"name": "Poco X5 Pro", "type": "android", "ua": "Instagram 285.0.0.19.112 Android (33/13; 440dpi; 1080x2400; Xiaomi; 22101320G; redwood; qcom; en_US; 495600200)"},
-    {"name": "Poco M6 Pro", "type": "android", "ua": "Instagram 295.0.0.22.110 Android (33/13; 400dpi; 1080x2460; Xiaomi; 2312FPCA6G; emerald; qcom; en_IN; 501200200)"},
     {"name": "Poco C55", "type": "android", "ua": "Instagram 275.0.0.10.115 Android (32/12; 320dpi; 720x1650; Xiaomi; 22127PC95I; earth; mt6769; en_IN; 465400500)"},
 
     # ==============================
-    # 📱 BBK ELECTRONICS (Oppo, Vivo, Realme, OnePlus, iQOO)
+    # 📱 BBK ELECTRONICS (Oppo, Vivo, Realme, OnePlus)
     # ==============================
     # OnePlus
     {"name": "OnePlus 11", "type": "android", "ua": "Instagram 305.0.0.20.112 Android (33/13; 560dpi; 1440x3216; OnePlus; PHB110; salami; qcom; en_US; 520100100)"},
     {"name": "OnePlus 10 Pro", "type": "android", "ua": "Instagram 280.0.0.15.118 Android (32/12; 560dpi; 1440x3216; OnePlus; NE2211; neul; qcom; en_US; 476500100)"},
     {"name": "OnePlus Nord 3", "type": "android", "ua": "Instagram 295.0.0.18.115 Android (33/13; 420dpi; 1240x2772; OnePlus; CPH2491; CPH2491; mt6983; en_IN; 501200500)"},
-    {"name": "OnePlus Nord CE 3 Lite", "type": "android", "ua": "Instagram 290.0.0.22.110 Android (33/13; 420dpi; 1080x2400; OnePlus; CPH2467; CPH2467; qcom; en_IN; 498500100)"},
     # Realme
     {"name": "Realme GT 2 Pro", "type": "android", "ua": "Instagram 280.0.0.22.118 Android (33/13; 560dpi; 1440x3216; realme; RMX3301; RMX3301; qcom; en_US; 476500300)"},
     {"name": "Realme 11 Pro+", "type": "android", "ua": "Instagram 290.0.0.12.110 Android (33/13; 420dpi; 1080x2412; realme; RMX3741; RMX3741; mt6877; en_IN; 499100200)"},
     {"name": "Realme Narzo 60", "type": "android", "ua": "Instagram 285.0.0.18.115 Android (33/13; 420dpi; 1080x2400; realme; RMX3750; RMX3750; mt6833; en_IN; 485400100)"},
-    {"name": "Realme C55", "type": "android", "ua": "Instagram 280.0.0.15.112 Android (33/13; 400dpi; 1080x2400; realme; RMX3710; RMX3710; mt6769; en_IN; 476500600)"},
     # Vivo
     {"name": "Vivo X90 Pro", "type": "android", "ua": "Instagram 300.0.0.18.110 Android (33/13; 480dpi; 1260x2800; vivo; V2219; PD2242; mt6985; en_US; 512300100)"},
     {"name": "Vivo V29e", "type": "android", "ua": "Instagram 295.0.0.22.115 Android (33/13; 420dpi; 1080x2400; vivo; V2303; V2303; qcom; en_IN; 501200600)"},
     {"name": "Vivo Y100", "type": "android", "ua": "Instagram 280.0.0.11.115 Android (33/13; 420dpi; 1080x2400; vivo; V2239; V2239; mt6877; en_IN; 487600100)"},
-    {"name": "Vivo T2x 5G", "type": "android", "ua": "Instagram 285.0.0.15.118 Android (33/13; 400dpi; 1080x2408; vivo; V2253; V2253; mt6833; en_IN; 498500300)"},
     # Oppo
     {"name": "Oppo Find X6 Pro", "type": "android", "ua": "Instagram 305.0.0.20.112 Android (33/13; 560dpi; 1440x3168; OPPO; PGEM10; PGEM10; qcom; en_US; 520100600)"},
     {"name": "Oppo Reno 10 Pro+", "type": "android", "ua": "Instagram 295.0.0.16.118 Android (33/13; 480dpi; 1240x2772; OPPO; CPH2521; CPH2521; qcom; en_IN; 502300500)"},
     {"name": "Oppo A78", "type": "android", "ua": "Instagram 290.0.0.14.110 Android (33/13; 400dpi; 1080x2400; OPPO; CPH2483; CPH2483; qcom; en_IN; 498300600)"},
-    # iQOO
-    {"name": "iQOO 11", "type": "android", "ua": "Instagram 300.0.0.18.115 Android (33/13; 560dpi; 1440x3200; vivo; I2209; PD2243; qcom; en_IN; 510200800)"},
-    {"name": "iQOO Neo 7 Pro", "type": "android", "ua": "Instagram 295.0.0.12.112 Android (33/13; 420dpi; 1080x2400; vivo; I2217; PD2232; qcom; en_IN; 501200800)"},
-    {"name": "iQOO Z7", "type": "android", "ua": "Instagram 285.0.0.15.110 Android (33/13; 420dpi; 1080x2388; vivo; I2207; I2207; mt6877; en_IN; 489200500)"},
 
     # ==============================
     # 📱 GOOGLE (PIXEL UNIVERSE)
@@ -116,7 +100,6 @@ DEVICE_PROFILES = [
     {"name": "Google Pixel 8", "type": "android", "ua": "Instagram 315.0.0.20.108 Android (34/14; 420dpi; 1080x2400; Google; Pixel 8; shiba; google; en_US; 534500200)"},
     {"name": "Google Pixel 7 Pro", "type": "android", "ua": "Instagram 290.0.0.18.115 Android (33/13; 560dpi; 1440x3120; Google; Pixel 7 Pro; cheetah; google; en_US; 498300500)"},
     {"name": "Google Pixel 7a", "type": "android", "ua": "Instagram 290.0.0.18.110 Android (33/13; 420dpi; 1080x2400; Google; Pixel 7a; lynx; google; en_US; 498300300)"},
-    {"name": "Google Pixel 6a", "type": "android", "ua": "Instagram 260.0.0.15.112 Android (33/13; 420dpi; 1080x2400; Google; Pixel 6a; bluejay; google; en_US; 412300100)"},
 
     # ==============================
     # 📱 TRANSSION (TECNO, INFINIX, ITEL)
@@ -130,20 +113,14 @@ DEVICE_PROFILES = [
     {"name": "Itel S23", "type": "android", "ua": "Instagram 280.0.0.12.118 Android (32/12; 320dpi; 720x1612; itel; S665L; itel-S665L; unisoc; en_IN; 476500900)"},
 
     # ==============================
-    # 📱 OTHER GLOBAL BRANDS (Motorola, Nokia, Nothing, etc.)
+    # 📱 OTHERS (Motorola, Nothing, etc.)
     # ==============================
     {"name": "Motorola Edge 40", "type": "android", "ua": "Instagram 295.0.0.20.112 Android (33/13; 420dpi; 1080x2400; motorola; motorola edge 40; rtwo; mt6891; en_US; 501500100)"},
     {"name": "Motorola Razr 40 Ultra", "type": "android", "ua": "Instagram 300.0.0.15.115 Android (33/13; 420dpi; 1080x2640; motorola; motorola razr 40 ultra; zeekr; qcom; en_US; 510200900)"},
-    {"name": "Moto G84", "type": "android", "ua": "Instagram 290.0.0.14.110 Android (33/13; 420dpi; 1080x2400; motorola; moto g84 5g; pennang; qcom; en_IN; 498300900)"},
     {"name": "Nothing Phone (2)", "type": "android", "ua": "Instagram 305.0.0.18.112 Android (33/13; 420dpi; 1080x2412; Nothing; A065; Pong; qcom; en_GB; 520100800)"},
     {"name": "Nothing Phone (1)", "type": "android", "ua": "Instagram 280.0.0.16.118 Android (33/13; 420dpi; 1080x2400; Nothing; A063; Spacewar; qcom; en_GB; 486700300)"},
-    {"name": "Asus ROG Phone 7", "type": "android", "ua": "Instagram 300.0.0.15.115 Android (33/13; 420dpi; 1080x2448; asus; ASUS_AI2205; AI2205; qcom; en_US; 510201000)"},
-    {"name": "Sony Xperia 1 V", "type": "android", "ua": "Instagram 310.0.0.12.118 Android (34/14; 640dpi; 1644x3840; Sony; XQ-DQ72; PDX-234; qcom; en_US; 523400500)"},
-    {"name": "Nokia G42 5G", "type": "android", "ua": "Instagram 290.0.0.14.112 Android (33/13; 320dpi; 720x1612; HMD Global; Nokia G42 5G; shadow; qcom; en_IN; 498500900)"},
     {"name": "Lava Agni 2", "type": "android", "ua": "Instagram 285.0.0.18.110 Android (33/13; 420dpi; 1080x2400; LAVA; LAVA LXX504; LXX504; mt6877; en_IN; 489200900)"},
-    {"name": "Micromax In Note 2", "type": "android", "ua": "Instagram 260.0.0.22.115 Android (31/11; 420dpi; 1080x2400; Micromax; E7748; E7748; mt6785; en_IN; 423500100)"},
-    {"name": "Huawei P60 Pro", "type": "android", "ua": "Instagram 300.0.0.15.112 Android (31/12; 480dpi; 1220x2700; HUAWEI; MNA-LX9; mona; hisilicon; en_US; 510201100)"},
-    {"name": "Honor 90", "type": "android", "ua": "Instagram 305.0.0.18.115 Android (33/13; 480dpi; 1200x2664; HONOR; REA-NX9; REA; qcom; en_US; 520100900)"},
+    {"name": "Micromax In Note 2", "type": "android", "ua": "Instagram 260.0.0.22.115 Android (31/11; 420dpi; 1080x2400; Micromax; E7748; E7748; mt6785; en_IN; 423500100)"}
 ]
 
 def clean_url(url):
@@ -291,6 +268,7 @@ def send_notifications(video_data, catbox_url):
 def update_history(url):
     with open(HISTORY_FILE, 'a') as f: f.write(url + '\n')
 
+# --- MAIN EXECUTION (AUTO-SKIP LOGIC) ---
 if __name__ == "__main__":
     max_retries = 10 
     attempt = 0
@@ -304,5 +282,20 @@ if __name__ == "__main__":
         data = download_video_data(next_url)
         
         if data and data['filename']:
+            # Success
             catbox_link = upload_to_catbox(data['filename'])
-           
+            send_notifications(data, catbox_link)
+            update_history(next_url)
+            if os.path.exists(data['filename']): os.remove(data['filename'])
+            print("🎉 Task Finished Successfully.")
+            sys.exit(0)
+        else:
+            # Failure
+            print(f"⚠️ Video failed: {next_url}")
+            print("🔄 Skipping this bad link & retrying next in 10s...")
+            update_history(next_url) 
+            attempt += 1
+            time.sleep(10)
+
+    print("❌ Too many failures. Exiting.")
+    sys.exit(1)
