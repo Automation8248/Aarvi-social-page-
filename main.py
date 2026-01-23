@@ -12,7 +12,7 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 
-# AAPKA RAPID API SETUP (Ye wahi hai jo aapne diya tha)
+# RAPID API SETUP
 RAPID_API_KEY = "1d87db308dmshd21171d762615b5p1368bejsnabb286989baf"
 RAPID_HOST = "instagram120.p.rapidapi.com"
 
@@ -69,15 +69,10 @@ def generate_hashtags(original_tags):
     return " ".join(final_tags[:6])
 
 def extract_user_and_code(url):
-    # URL se Username aur ID nikalna
-    # Ex: https://www.instagram.com/virtualaarvi/reel/DT0BUcACEYk/
     try:
         clean_url = url.split('?')[0].rstrip('/')
         parts = clean_url.split('/')
-        
-        shortcode = parts[-1] # Last wala ID hota hai
-        
-        # Username dhoondhna
+        shortcode = parts[-1]
         username = None
         if 'reel' in parts:
             idx = parts.index('reel')
@@ -85,7 +80,6 @@ def extract_user_and_code(url):
         elif 'p' in parts:
             idx = parts.index('p')
             username = parts[idx-1]
-            
         return username, shortcode
     except:
         return None, None
@@ -97,28 +91,22 @@ def download_video_data(url):
         try: os.remove(f)
         except: pass
 
-    # 1. Target Data Nikalo
+    # 1. Info extraction
     username, target_code = extract_user_and_code(url)
     if not username or not target_code:
-        print("❌ Error: URL se Username nahi mila. Make sure link format sahi hai.")
+        print("❌ Error: Invalid URL format.")
         return None
     
     print(f"🔍 Searching Video: User='{username}', ID='{target_code}'")
 
-    # 2. RapidAPI se User ki Profile List mango
-    # Yeh endpoint aapke diye huye curl command wala hai
+    # 2. Call API
     api_url = f"https://{RAPID_HOST}/api/instagram/posts"
-    
     headers = {
         "x-rapidapi-key": RAPID_API_KEY,
         "x-rapidapi-host": RAPID_HOST,
         "Content-Type": "application/json"
     }
-    
-    payload = {
-        "username": username,
-        "maxId": "" # First page
-    }
+    payload = {"username": username, "maxId": ""}
 
     try:
         print("📡 Fetching Profile Posts via API...")
@@ -128,36 +116,56 @@ def download_video_data(url):
             print(f"❌ API Error ({response.status_code}): {response.text}")
             return None
 
-        # Data handle karna (List ho sakti hai ya dictionary)
         api_data = response.json()
         posts_list = []
-        
+
+        # --- FIX: SMART PARSING LOGIC ---
+        # Data ko dhoondh kar nikalna chahe wo kahin bhi chhupa ho
         if isinstance(api_data, list):
             posts_list = api_data
         elif isinstance(api_data, dict):
-            if 'result' in api_data: posts_list = api_data['result']
-            elif 'data' in api_data: posts_list = api_data['data']
-        
-        # 3. List mein apna video dhoondho
+            # Check Result -> Items
+            if 'result' in api_data:
+                res = api_data['result']
+                if isinstance(res, list): posts_list = res
+                elif isinstance(res, dict) and 'items' in res: posts_list = res['items']
+                elif isinstance(res, dict) and 'feed_items' in res: posts_list = res['feed_items']
+            
+            # Check Data -> Items
+            elif 'data' in api_data:
+                dat = api_data['data']
+                if isinstance(dat, list): posts_list = dat
+                elif isinstance(dat, dict) and 'items' in dat: posts_list = dat['items']
+            
+            # Direct Items
+            elif 'items' in api_data:
+                posts_list = api_data['items']
+
+        print(f"📂 Scanning {len(posts_list)} posts...")
+
+        # 3. Search Loop
         video_download_url = None
         title = "Instagram Reel"
         
-        print(f"📂 Scanning {len(posts_list)} recent posts...")
-        
         for post in posts_list:
-            # ID match karo (API 'code' ya 'shortcode' use kar sakta hai)
-            post_code = post.get('code') or post.get('shortcode')
+            # Safety check: agar post dictionary nahi hai to skip karo
+            if not isinstance(post, dict):
+                continue
+
+            # Keys check karna
+            post_code = post.get('code') or post.get('shortcode') or post.get('pk')
             
-            if post_code == target_code:
+            # ID Match logic (Strings compare karna safe rehta hai)
+            if str(post_code) == str(target_code):
                 print("✅ Match Found!")
                 
-                # Video URL nikalo
+                # Video URL Extraction
                 if 'video_url' in post:
                     video_download_url = post['video_url']
                 elif 'video_versions' in post and len(post['video_versions']) > 0:
                     video_download_url = post['video_versions'][0]['url']
                 
-                # Caption nikalo
+                # Title Extraction
                 if 'caption' in post:
                     cap = post['caption']
                     if isinstance(cap, dict): title = cap.get('text', '')
@@ -165,13 +173,13 @@ def download_video_data(url):
                 break
         
         if not video_download_url:
-            print(f"⚠️ Video ID '{target_code}' user ke latest posts mein nahi mila.")
+            print(f"⚠️ Video ID '{target_code}' not found in recent list.")
+            # Debugging ke liye structure print karna (optional)
+            # print(f"DEBUG DATA: {api_data}") 
             return None
 
-        # 4. Download File
+        # 4. Download
         print("📥 Downloading Video File...")
-        
-        # User-Agent header zaroori hai CDN ke liye
         file_headers = {'User-Agent': 'Mozilla/5.0'}
         video_res = requests.get(video_download_url, headers=file_headers, stream=True)
         
