@@ -3,6 +3,7 @@ import requests
 import sys
 import glob
 import re
+import time
 from deep_translator import GoogleTranslator
 
 # --- CONFIGURATION ---
@@ -11,10 +12,6 @@ HISTORY_FILE = 'history.txt'
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
-
-# RAPID API SETUP
-RAPID_API_KEY = "1d87db308dmshd21171d762615b5p1368bejsnabb286989baf"
-RAPID_HOST = "instagram120.p.rapidapi.com"
 
 SEO_TAGS = ["#reels", "#trending", "#viral", "#explore", "#love", "#shayari"]
 FORBIDDEN_WORDS = ["virtualaarvi", "aarvi", "video by", "uploaded by", "subscribe", "channel"]
@@ -68,20 +65,47 @@ def generate_hashtags(original_tags):
         else: break
     return " ".join(final_tags[:6])
 
-def extract_user_and_code(url):
+# --- NEW: PUBLER API FUNCTION (Free & No Login) ---
+def fetch_via_publer(url):
+    print("🔄 Connecting to Publer API (Bypassing GitHub Block)...")
+    
+    api_url = "https://app.publer.io/hooks/media"
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Content-Type": "application/json",
+        "Referer": "https://publer.io/"
+    }
+    
+    payload = {
+        "url": url,
+        "iphone": False
+    }
+
     try:
-        clean_url = url.split('?')[0].rstrip('/')
-        parts = clean_url.split('/')
-        shortcode = parts[-1]
-        username = None
-        if 'reel' in parts:
-            idx = parts.index('reel')
-            username = parts[idx-1]
-        elif 'p' in parts:
-            idx = parts.index('p')
-            username = parts[idx-1]
-        return username, shortcode
-    except:
+        # Step 1: Send Request
+        response = requests.post(api_url, json=payload, headers=headers, timeout=20)
+        
+        if response.status_code != 200:
+            print(f"⚠️ Publer API Error: {response.status_code}")
+            return None, None
+            
+        data = response.json()
+        
+        # Step 2: Parse Response
+        # Publer returns a 'payload' list. We take the first video.
+        if 'payload' in data and isinstance(data['payload'], list):
+            for item in data['payload']:
+                if 'path' in item:
+                    video_url = item['path']
+                    caption = item.get('caption', 'Instagram Reel')
+                    return video_url, caption
+        
+        print("❌ Publer could not find the video.")
+        return None, None
+
+    except Exception as e:
+        print(f"❌ Publer Connection Failed: {e}")
         return None, None
 
 def download_video_data(url):
@@ -91,96 +115,23 @@ def download_video_data(url):
         try: os.remove(f)
         except: pass
 
-    # 1. Info extraction
-    username, target_code = extract_user_and_code(url)
-    if not username or not target_code:
-        print("❌ Error: Invalid URL format.")
-        return None
+    # --- USE PUBLER INSTEAD OF RAPID/COBALT ---
+    video_download_url, title = fetch_via_publer(url)
     
-    print(f"🔍 Searching Video: User='{username}', ID='{target_code}'")
+    if not video_download_url:
+        print("❌ Failed to fetch video link.")
+        return None
 
-    # 2. Call API
-    api_url = f"https://{RAPID_HOST}/api/instagram/posts"
-    headers = {
-        "x-rapidapi-key": RAPID_API_KEY,
-        "x-rapidapi-host": RAPID_HOST,
-        "Content-Type": "application/json"
-    }
-    payload = {"username": username, "maxId": ""}
-
+    print("✅ Video Link Found!")
+    
+    # Download File
     try:
-        print("📡 Fetching Profile Posts via API...")
-        response = requests.post(api_url, json=payload, headers=headers)
-        
-        if response.status_code != 200:
-            print(f"❌ API Error ({response.status_code}): {response.text}")
-            return None
-
-        api_data = response.json()
-        posts_list = []
-
-        # --- FIX: SMART PARSING LOGIC ---
-        # Data ko dhoondh kar nikalna chahe wo kahin bhi chhupa ho
-        if isinstance(api_data, list):
-            posts_list = api_data
-        elif isinstance(api_data, dict):
-            # Check Result -> Items
-            if 'result' in api_data:
-                res = api_data['result']
-                if isinstance(res, list): posts_list = res
-                elif isinstance(res, dict) and 'items' in res: posts_list = res['items']
-                elif isinstance(res, dict) and 'feed_items' in res: posts_list = res['feed_items']
-            
-            # Check Data -> Items
-            elif 'data' in api_data:
-                dat = api_data['data']
-                if isinstance(dat, list): posts_list = dat
-                elif isinstance(dat, dict) and 'items' in dat: posts_list = dat['items']
-            
-            # Direct Items
-            elif 'items' in api_data:
-                posts_list = api_data['items']
-
-        print(f"📂 Scanning {len(posts_list)} posts...")
-
-        # 3. Search Loop
-        video_download_url = None
-        title = "Instagram Reel"
-        
-        for post in posts_list:
-            # Safety check: agar post dictionary nahi hai to skip karo
-            if not isinstance(post, dict):
-                continue
-
-            # Keys check karna
-            post_code = post.get('code') or post.get('shortcode') or post.get('pk')
-            
-            # ID Match logic (Strings compare karna safe rehta hai)
-            if str(post_code) == str(target_code):
-                print("✅ Match Found!")
-                
-                # Video URL Extraction
-                if 'video_url' in post:
-                    video_download_url = post['video_url']
-                elif 'video_versions' in post and len(post['video_versions']) > 0:
-                    video_download_url = post['video_versions'][0]['url']
-                
-                # Title Extraction
-                if 'caption' in post:
-                    cap = post['caption']
-                    if isinstance(cap, dict): title = cap.get('text', '')
-                    else: title = str(cap)
-                break
-        
-        if not video_download_url:
-            print(f"⚠️ Video ID '{target_code}' not found in recent list.")
-            # Debugging ke liye structure print karna (optional)
-            # print(f"DEBUG DATA: {api_data}") 
-            return None
-
-        # 4. Download
         print("📥 Downloading Video File...")
-        file_headers = {'User-Agent': 'Mozilla/5.0'}
+        # Headers needed to avoid 403 on the CDN
+        file_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        }
+        
         video_res = requests.get(video_download_url, headers=file_headers, stream=True)
         
         dl_filename = "temp_video.mp4"
@@ -200,7 +151,7 @@ def download_video_data(url):
         }
 
     except Exception as e:
-        print(f"❌ System Error: {e}")
+        print(f"❌ File Download Error: {e}")
         return None
 
 def upload_to_catbox(filepath):
