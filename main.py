@@ -3,8 +3,8 @@ import requests
 import sys
 import glob
 import re
-import time
 import random
+import time
 from bs4 import BeautifulSoup
 from deep_translator import GoogleTranslator
 
@@ -18,11 +18,18 @@ WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 SEO_TAGS = ["#reels", "#trending", "#viral", "#explore", "#love", "#shayari"]
 FORBIDDEN_WORDS = ["virtualaarvi", "aarvi", "video by", "uploaded by", "subscribe", "channel"]
 
-# Real Browser Headers
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
-]
+# --- STEALTH HEADERS (Logic: Pretend to be Google/Bing Bot) ---
+# Instagram bots ko block karta hai, par Google Search ko allow karta hai.
+BOT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+    "Referer": "https://www.google.com/"
+}
+
+BROWSER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+}
 
 def get_next_video():
     processed_urls = []
@@ -82,86 +89,75 @@ def extract_shortcode(url):
         return parts[-1]
     except: return None
 
-# --- STRATEGY 1: EMBED PAGE BYPASS (Pure Logic) ---
-def fetch_via_embed(shortcode):
-    print("🔄 Strategy 1: Attempting Embed Logic (Bypassing Main Page)...")
-    
-    # Instagram Embed URL (Ye aksar blocked nahi hota)
-    embed_url = f"https://www.instagram.com/p/{shortcode}/embed/captioned/"
-    
-    headers = {
-        "User-Agent": random.choice(USER_AGENTS),
-        "Referer": "https://www.instagram.com/",
-    }
-
-    try:
-        resp = requests.get(embed_url, headers=headers, timeout=10)
-        if resp.status_code != 200:
-            print(f"⚠️ Embed Page Blocked (Status: {resp.status_code})")
-            return None, None
-
-        # HTML mein video link dhoondhna
-        html = resp.text
-        
-        # Pattern 1: video_url inside JSON config
-        match = re.search(r'"video_url":"([^"]+)"', html)
-        if match:
-            video_url = match.group(1).replace("\\u0026", "&")
-            print("✅ Found video in Embed Code!")
-            return video_url, "Instagram Reel"
-            
-        # Pattern 2: mp4 in regular href
-        match_mp4 = re.search(r'href="([^"]+\.mp4[^"]*)"', html)
-        if match_mp4:
-            video_url = match_mp4.group(1).replace("&amp;", "&")
-            print("✅ Found mp4 link in Embed HTML!")
-            return video_url, "Instagram Reel"
-            
-        print("⚠️ Embed page loaded but no video found.")
-    except Exception as e:
-        print(f"⚠️ Embed Logic Error: {e}")
-    
-    return None, None
-
-# --- STRATEGY 2: CLEAN VIEWER (Imginn) ---
-def fetch_via_viewer(shortcode):
-    print("🔄 Strategy 2: Fetching via Clean Viewer (Imginn)...")
-    # Imginn ek downloader nahi, viewer hai. GitHub IP ispe chalta hai.
-    url = f"https://imginn.com/p/{shortcode}/"
-    headers = {"User-Agent": random.choice(USER_AGENTS)}
+# --- LOGIC 1: PICUKI (The Strongest Viewer) ---
+def fetch_via_picuki(shortcode):
+    print("🔄 Logic 1: Routing via Picuki (Masking GitHub IP)...")
+    url = f"https://www.picuki.com/media/{shortcode}"
     
     try:
-        resp = requests.get(url, headers=headers, timeout=15)
+        resp = requests.get(url, headers=BROWSER_HEADERS, timeout=15)
         if resp.status_code != 200:
+            print(f"⚠️ Picuki Status: {resp.status_code}")
             return None, None
             
         soup = BeautifulSoup(resp.text, 'html.parser')
         
-        # Download button dhoondhna
+        # Picuki mein video link script ya video tag mein hota hai
+        video_tag = soup.find('video')
         video_url = None
         
-        # Method A: Class 'download-btn'
-        btn = soup.find('a', {'class': 'download-btn'})
-        if btn and btn.get('href'):
-            video_url = btn['href']
-            
-        # Method B: Video Tag
-        if not video_url:
-            vid = soup.find('video')
-            if vid and vid.get('src'):
-                video_url = vid['src']
+        if video_tag and video_tag.get('src'):
+            video_url = video_tag['src']
         
+        # Fallback: Finding in scripts or hidden inputs
+        if not video_url:
+            match = re.search(r'src="([^"]+\.mp4[^"]*)"', resp.text)
+            if match: video_url = match.group(1).replace("&amp;", "&")
+            
         if video_url:
-            print("✅ Success via Viewer Logic!")
-            # Caption
+            print("✅ Hidden Link Found via Picuki!")
+            # Caption scraping
             caption = "Instagram Reel"
-            desc = soup.find('p', {'class': 'desc'})
+            desc = soup.find('div', {'class': 'single-photo-description'})
             if desc: caption = desc.get_text().strip()
             return video_url, caption
             
     except Exception as e:
-        print(f"⚠️ Viewer Logic Failed: {e}")
+        print(f"⚠️ Picuki Logic Error: {e}")
         
+    return None, None
+
+# --- LOGIC 2: INSTANAVIGATION (Backup Viewer) ---
+def fetch_via_instanavigation(shortcode):
+    print("🔄 Logic 2: Routing via Instanavigation...")
+    # Yeh site API call use karti hai, hum usse simulate karenge
+    # Note: URL structure changes often, scraping headers
+    url = f"https://instanavigation.com/post/{shortcode}"
+    
+    try:
+        resp = requests.get(url, headers=BROWSER_HEADERS, timeout=15)
+        if resp.status_code == 200:
+            match = re.search(r'href="([^"]+\.mp4[^"]*)"', resp.text)
+            if match:
+                print("✅ Found via Instanavigation!")
+                return match.group(1).replace("&amp;", "&"), "Instagram Reel"
+    except: pass
+    return None, None
+
+# --- LOGIC 3: DIRECT GOOGLEBOT SPOOF (Last Resort) ---
+def fetch_via_googlebot(url):
+    print("🔄 Logic 3: Spoofing as Googlebot...")
+    # Instagram might let Googlebot access the page
+    try:
+        resp = requests.get(url, headers=BOT_HEADERS, timeout=10)
+        if resp.status_code == 200:
+            # Try finding og:video
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            meta_video = soup.find("meta", property="og:video")
+            if meta_video:
+                print("✅ Googlebot Trick Worked!")
+                return meta_video["content"], "Instagram Reel"
+    except: pass
     return None, None
 
 def download_video_data(url):
@@ -173,35 +169,42 @@ def download_video_data(url):
 
     shortcode = extract_shortcode(url)
     if not shortcode:
-        print("❌ Invalid URL format")
+        print("❌ Invalid URL")
         return None
 
-    # Step 1: Try Embed Logic (Pure Instagram)
-    video_download_url, title = fetch_via_embed(shortcode)
+    # --- EXECUTE LOGIC CHAIN ---
+    # Picuki sabse reliable hai kyunki wo content ko proxy karta hai
+    video_download_url, title = fetch_via_picuki(shortcode)
     
-    # Step 2: Try Viewer Logic (If Step 1 fails)
     if not video_download_url:
-        video_download_url, title = fetch_via_viewer(shortcode)
+        video_download_url, title = fetch_via_instanavigation(shortcode)
+        
+    if not video_download_url:
+        video_download_url, title = fetch_via_googlebot(url)
 
     if not video_download_url:
-        print("❌ Both Logic Strategies Failed. GitHub IP is severely restricted.")
+        print("❌ All Logic Failed. GitHub IP is heavily blacklisted.")
         return None
     
     # Download File
     try:
         print("📥 Downloading Video File...")
-        file_headers = {"User-Agent": random.choice(USER_AGENTS)}
+        # Picuki links often require Picuki as referrer
+        dl_headers = {
+            "User-Agent": BROWSER_HEADERS["User-Agent"],
+            "Referer": "https://www.picuki.com/"
+        }
         
-        video_res = requests.get(video_download_url, headers=file_headers, stream=True)
+        video_res = requests.get(video_download_url, headers=dl_headers, stream=True)
         
         dl_filename = "temp_video.mp4"
         with open(dl_filename, 'wb') as f:
             for chunk in video_res.iter_content(chunk_size=1024):
                 if chunk: f.write(chunk)
         
-        # Validate File
+        # Check size to ensure it's not an HTML error page
         if os.path.getsize(dl_filename) < 1000:
-            print("❌ Downloaded file is corrupted/empty.")
+            print("❌ File too small (likely an error page).")
             return None
         
         hashtags = generate_hashtags([])
