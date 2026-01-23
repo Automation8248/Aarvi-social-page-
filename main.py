@@ -3,8 +3,6 @@ import requests
 import sys
 import glob
 import re
-import random
-import time
 from deep_translator import GoogleTranslator
 
 # --- CONFIGURATION ---
@@ -14,15 +12,9 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 
-# --- UPDATED WORKING SERVER LIST (2026) ---
-# Ye list abhi active servers ki hai
-COBALT_INSTANCES = [
-    "https://api.cobalt.tools",       # Official Main Server
-    "https://cobalt.arms.nu",         # Mirror 1
-    "https://cobalt.rudart.cm",       # Mirror 2
-    "https://cobalt.moscow.btn.moe",  # Mirror 3
-    "https://hyp.cobalt.tools",       # Mirror 4
-]
+# RapidAPI Key (Jo aapne di thi)
+RAPID_API_KEY = "1d87db308dmshd21171d762615b5p1368bejsnabb286989baf"
+RAPID_HOST = "instagram120.p.rapidapi.com"
 
 SEO_TAGS = ["#reels", "#trending", "#viral", "#explore", "#love", "#shayari"]
 FORBIDDEN_WORDS = ["virtualaarvi", "aarvi", "video by", "uploaded by", "subscribe", "channel"]
@@ -61,72 +53,91 @@ def translate_and_shorten(text):
         return " ".join(words[:4])
     except: return None
 
+def generate_hashtags(original_tags):
+    final_tags = ["#aarvi"]
+    forbidden = ["virtualaarvi", "aarvi"]
+    if original_tags:
+        for tag in original_tags:
+            clean_tag = tag.replace(" ", "").lower()
+            if clean_tag not in forbidden and f"#{clean_tag}" not in final_tags:
+                final_tags.append(f"#{clean_tag}")
+    for seo in SEO_TAGS:
+        if len(final_tags) < 5:
+            if seo not in final_tags: final_tags.append(seo)
+        else: break
+    return " ".join(final_tags[:5])
+
 def download_video_data(url):
-    print(f"⬇️ Processing URL via Cobalt: {url}")
+    print(f"⬇️ Processing URL via RapidAPI: {url}")
     
     for f in glob.glob("temp_video*"):
         try: os.remove(f)
         except: pass
 
-    # --- COBALT API LOGIC ---
+    # --- RAPID API LOGIC (Fixed Endpoints) ---
     headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"
-    }
-    
-    payload = {
-        "url": url,
-        "vCodec": "h264",
-        "vQuality": "720",
-        "filenamePattern": "basic"
+        "x-rapidapi-key": RAPID_API_KEY,
+        "x-rapidapi-host": RAPID_HOST
     }
 
-    download_url = None
+    # Hum do alag-alag endpoints try karenge agar ek fail hua to
+    endpoints = [
+        "https://instagram120.p.rapidapi.com/download-video",  # Try 1
+        "https://instagram120.p.rapidapi.com/media/download",  # Try 2
+    ]
     
-    # Randomize server order
-    random.shuffle(COBALT_INSTANCES)
+    video_download_url = None
+    title = "Instagram Reel"
 
-    for instance in COBALT_INSTANCES:
+    for api_url in endpoints:
         try:
-            # Correct Endpoint Structure
-            api_url = f"{instance}/api/json"
-            print(f"📡 Trying Server: {instance} ...")
+            print(f"📡 Trying Endpoint: {api_url} ...")
+            querystring = {"url": url} # Yeh API usually full URL leti hai
             
-            resp = requests.post(api_url, json=payload, headers=headers, timeout=15)
+            response = requests.get(api_url, headers=headers, params=querystring)
             
-            if resp.status_code == 200:
-                data = resp.json()
-                if 'url' in data:
-                    download_url = data['url']
+            if response.status_code == 200:
+                data = response.json()
+                
+                # Response se video link nikalna (Flexible logic)
+                if 'video_url' in data:
+                    video_download_url = data['video_url']
+                elif 'data' in data and 'video_url' in data['data']:
+                    video_download_url = data['data']['video_url']
+                elif 'result' in data and 'video_url' in data['result']:
+                    video_download_url = data['result']['video_url']
+                elif 'url' in data: # Kabhi kabhi direct url key hoti hai
+                    video_download_url = data['url']
+
+                # Agar URL mil gaya to loop break karo
+                if video_download_url:
                     print("✅ Video Link Found!")
+                    # Title nikalna
+                    if 'caption' in data: title = data['caption']
+                    elif 'title' in data: title = data['title']
                     break
-                elif 'status' in data and data['status'] == 'error':
-                    print(f"⚠️ API Error: {data.get('text')}")
             else:
-                print(f"⚠️ Failed (Status: {resp.status_code})")
+                print(f"⚠️ Endpoint failed: {response.status_code}")
                 
         except Exception as e:
-            print(f"⚠️ Connection Error: {str(e)[:50]}")
+            print(f"⚠️ Connection Error: {e}")
             continue
 
-    if not download_url:
-        print("❌ All Cobalt servers failed. Instagram might be blocking them.")
+    if not video_download_url:
+        print("❌ RapidAPI Failed to find video URL. Key might be wrong or API endpoint changed.")
         return None
 
-    # Download the file
+    # Download File
     try:
         print("📥 Downloading video file...")
-        video_res = requests.get(download_url, stream=True)
+        video_res = requests.get(video_download_url, stream=True)
         dl_filename = "temp_video.mp4"
         with open(dl_filename, 'wb') as f:
             for chunk in video_res.iter_content(chunk_size=1024):
                 if chunk: f.write(chunk)
         
-        # Generic Metadata (Since API doesn't allow scraping text easily without login)
-        title = "Instagram Reel"
-        hashtags = "#reels #trending #viral " + " ".join(SEO_TAGS[:2])
-        final_hindi_text = "देखिए आज का वीडियो ✨"
+        hashtags = generate_hashtags([])
+        final_hindi_text = translate_and_shorten(title) or "देखिए आज का वीडियो"
 
         return {
             "filename": dl_filename,
@@ -137,7 +148,7 @@ def download_video_data(url):
         }
 
     except Exception as e:
-        print(f"❌ File Download Error: {e}")
+        print(f"❌ File Save Error: {e}")
         return None
 
 def upload_to_catbox(filepath):
