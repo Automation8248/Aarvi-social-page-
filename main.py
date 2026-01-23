@@ -3,7 +3,6 @@ import requests
 import sys
 import glob
 import re
-import time
 from deep_translator import GoogleTranslator
 
 # --- CONFIGURATION ---
@@ -65,60 +64,61 @@ def generate_hashtags(original_tags):
         else: break
     return " ".join(final_tags[:6])
 
-# --- NEW: INDOWN SCRAPER (More Stable) ---
-def fetch_from_indown(url):
-    print("🔄 Connecting to Indown.io (Bypassing Instagram)...")
+# --- NEW: SSSInstagram SCRAPER ---
+def fetch_from_sssinstagram(url):
+    print("🔄 Connecting to SSSInstagram (Attempting Bypass)...")
     
-    session = requests.Session()
+    api_url = "https://sssinstagram.com/request"
     
-    # Headers are critical for scraping
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Referer": "https://indown.io/",
-        "Origin": "https://indown.io",
-        "Content-Type": "application/x-www-form-urlencoded"
+        "Content-Type": "application/json",
+        "Origin": "https://sssinstagram.com",
+        "Referer": "https://sssinstagram.com/",
+    }
+    
+    payload = {
+        "link": url,
+        "token": ""
     }
 
     try:
-        # Step 1: Initial Handshake (Cookies lene ke liye)
-        session.get("https://indown.io", headers=headers, timeout=10)
-        
-        # Step 2: POST Request (Link bhejna)
-        post_url = "https://indown.io/download"
-        data = {
-            "link": url,
-            "referer": "https://indown.io"
-        }
-        
-        print("📡 Sending link to Indown server...")
-        response = session.post(post_url, data=data, headers=headers, timeout=20)
+        # Request
+        print("📡 Sending Request...")
+        response = requests.post(api_url, json=payload, headers=headers, timeout=20)
         
         if response.status_code != 200:
-            print(f"⚠️ Server returned status: {response.status_code}")
+            print(f"⚠️ SSSInstagram blocked us. Status: {response.status_code}")
             return None
         
-        # Step 3: Extract Video Link from HTML
-        html = response.text
+        data = response.json()
         
-        # Regex to find .mp4 link inside the response
-        # Indown usually puts link in <source src="..."> or <a href="...">
-        video_match = re.search(r'src="([^"]+\.mp4[^"]*)"', html)
-        
-        if not video_match:
-            # Fallback regex search
-            video_match = re.search(r'href="([^"]+\.mp4[^"]*)"', html)
+        # HTML Response ke andar link dhoondhna
+        if 'data' in data and 'html' in data['data']:
+            html = data['data']['html']
             
-        if video_match:
-            video_url = video_match.group(1).replace("&amp;", "&")
-            print("✅ Video Link Extracted Successfully!")
-            return video_url
+            # Regex to find download link (Looking for href="...mp4")
+            match = re.search(r'href="(https?://[^"]+\.mp4[^"]*)"', html)
+            # Alternative Regex (SSS sometimes uses different structure)
+            if not match:
+                match = re.search(r'href="(https?://[^"]+googlevideo[^"]+)"', html)
+            if not match:
+                match = re.search(r'href="(https?://[^"]+cdninstagram[^"]+)"', html)
+
+            if match:
+                video_url = match.group(1).replace("&amp;", "&")
+                print("✅ Video Link Found!")
+                return video_url
+            else:
+                print("❌ HTML mila par Video Link nahi mila.")
+                # print(html[:300]) # Debugging
+                return None
         else:
-            print("❌ Could not find video link in HTML. Indown might be blocked or changed layout.")
-            # Debug: print(html[:500])
+            print("❌ Invalid API Response.")
             return None
 
     except Exception as e:
-        print(f"❌ Scraping Failed: {e}")
+        print(f"❌ Connection Failed: {e}")
         return None
 
 def download_video_data(url):
@@ -128,8 +128,8 @@ def download_video_data(url):
         try: os.remove(f)
         except: pass
 
-    # --- USE INDOWN SCRAPER ---
-    video_download_url = fetch_from_indown(url)
+    # --- USE SSSInstagram ---
+    video_download_url = fetch_from_sssinstagram(url)
     
     if not video_download_url:
         print("❌ Failed to fetch video link.")
@@ -138,7 +138,6 @@ def download_video_data(url):
     # Download File
     try:
         print("📥 Downloading Video File...")
-        # Headers needed to avoid 403
         file_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         }
@@ -150,7 +149,7 @@ def download_video_data(url):
             for chunk in video_res.iter_content(chunk_size=1024):
                 if chunk: f.write(chunk)
         
-        # Generic Metadata
+        # Metadata
         title = "Instagram Reel"
         hashtags = generate_hashtags([])
         final_hindi_text = "देखिए आज का वीडियो ✨"
