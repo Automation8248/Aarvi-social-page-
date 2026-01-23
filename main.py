@@ -4,11 +4,14 @@ import yt_dlp
 import sys
 import glob
 import re
+import time
 from deep_translator import GoogleTranslator
 
 # --- CONFIGURATION ---
 VIDEO_LIST_FILE = 'videos.txt'
 HISTORY_FILE = 'history.txt'
+
+# Secrets Load Karna
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
@@ -17,7 +20,6 @@ SEO_TAGS = ["#reels", "#trending", "#viral", "#explore", "#love", "#shayari", "#
 FORBIDDEN_WORDS = ["virtualaarvi", "aarvi", "video by", "uploaded by", "subscribe", "channel"]
 
 def clean_url(url):
-    # Remove quotes, commas, and whitespace
     return url.strip().strip('"').strip("'").strip(',')
 
 def get_next_video():
@@ -31,7 +33,6 @@ def get_next_video():
         return None
 
     with open(VIDEO_LIST_FILE, 'r') as f:
-        # Read all URLs and filter out processed ones
         all_urls = [clean_url(line) for line in f.readlines() if line.strip()]
 
     for url in all_urls:
@@ -68,21 +69,15 @@ def download_video_data(url):
         try: os.remove(f)
         except: pass
 
+    # Android Fake ID (Taaki login na maange)
     ydl_opts = {
         'format': 'best[ext=mp4]/best',
         'outtmpl': 'temp_video.%(ext)s',
         'quiet': True,
         'no_warnings': True,
         'ignoreerrors': True,
-        'extractor_args': {
-            'instagram': {
-                'impersonate': ['android']
-            }
-        },
-        'http_headers': {
-            'User-Agent': 'Instagram 219.0.0.12.117 Android',
-            'Accept-Language': 'en-US',
-        }
+        'extractor_args': {'instagram': {'impersonate': ['android']}},
+        'http_headers': {'User-Agent': 'Instagram 219.0.0.12.117 Android', 'Accept-Language': 'en-US'}
     }
     
     dl_filename = None
@@ -103,9 +98,8 @@ def download_video_data(url):
                 
                 final_hindi_text = translate_and_shorten(title) or "देखिए आज का वीडियो ✨"
             else:
-                print("❌ Download Failed (Sensitive Content/Deleted)")
+                print("❌ Download Failed (Content Unavailable/Private)")
                 return None
-                
     except Exception as e:
         print(f"❌ Error: {e}")
         return None
@@ -131,66 +125,85 @@ def upload_to_catbox(filepath):
                 timeout=120
             )
             if response.status_code == 200:
-                return response.text.strip()
-    except: pass
+                link = response.text.strip()
+                print(f"✅ Catbox Link: {link}")
+                return link
+    except Exception as e:
+        print(f"⚠️ Catbox Upload Failed: {e}")
     return None
 
 def send_notifications(video_data, catbox_url):
     print("\n--- Sending Notifications ---")
     tg_caption = f"{video_data['hindi_text']}\n.\n.\n.\n{video_data['hashtags']}"
     
-    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+    # 1. Telegram Check
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("⚠️ Telegram skipped: Token or Chat ID missing in Secrets.")
+    else:
+        print("📤 Sending Video to Telegram...")
         tg_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
         try:
             with open(video_data['filename'], 'rb') as video_file:
                 payload = {"chat_id": str(TELEGRAM_CHAT_ID), "caption": tg_caption}
-                requests.post(tg_url, data=payload, files={'video': video_file})
-                print("✅ Telegram Sent!")
-        except Exception as e: print(f"❌ Telegram Fail: {e}")
+                resp = requests.post(tg_url, data=payload, files={'video': video_file}, timeout=120)
+                if resp.status_code == 200: print("✅ Telegram Sent!")
+                else: print(f"❌ Telegram Error {resp.status_code}: {resp.text}")
+        except Exception as e: print(f"❌ Telegram Exception: {e}")
 
-    if WEBHOOK_URL and catbox_url:
+    # 2. Webhook Check
+    if not WEBHOOK_URL:
+        print("⚠️ Webhook skipped: URL missing in Secrets.")
+    elif not catbox_url:
+        print("⚠️ Webhook skipped: Catbox URL failed.")
+    else:
+        print("📤 Sending to Webhook...")
         payload = {
             "content": tg_caption, 
             "video_url": catbox_url,
             "original_post": video_data['original_url']
         }
         try:
-            requests.post(WEBHOOK_URL, json=payload)
-            print("✅ Webhook Sent!")
-        except Exception as e: print(f"❌ Webhook Fail: {e}")
+            resp = requests.post(WEBHOOK_URL, json=payload, timeout=30)
+            if resp.status_code in [200, 204]: print("✅ Webhook Sent!")
+            else: print(f"❌ Webhook Error {resp.status_code}: {resp.text}")
+        except Exception as e: print(f"❌ Webhook Exception: {e}")
 
 def update_history(url):
     with open(HISTORY_FILE, 'a') as f: f.write(url + '\n')
 
-# --- MAIN EXECUTION WITH AUTO-SKIP ---
+# --- MAIN LOOP (AUTO-SKIP LOGIC) ---
 if __name__ == "__main__":
-    max_attempts = 10 # Try up to 10 videos before giving up
-    attempts = 0
-
-    while attempts < max_attempts:
+    max_retries = 5  # Maximum 5 videos try karega
+    attempt = 0
+    
+    while attempt < max_retries:
         next_url = get_next_video()
         if not next_url:
-            print("💤 No new videos found.")
+            print("💤 No new videos found in list.")
             sys.exit(0)
-        
-        # Try downloading
+
+        # Download Try Karo
         data = download_video_data(next_url)
         
         if data and data['filename']:
-            # SUCCESS
+            # --- SUCCESS ---
+            # 1. Upload
             catbox_link = upload_to_catbox(data['filename'])
+            # 2. Notify
             send_notifications(data, catbox_link)
-            update_history(next_url) # Mark successful
-            
+            # 3. Save & Cleanup
+            update_history(next_url)
             if os.path.exists(data['filename']): os.remove(data['filename'])
-            print("✅ Task Completed Successfully.")
-            sys.exit(0) # Stop after 1 successful post
+            
+            print("🎉 Task Finished Successfully.")
+            sys.exit(0) # Kaam khatam, exit
         else:
-            # FAILURE (Skip this video)
-            print(f"⚠️ Skipping bad video: {next_url}")
-            update_history(next_url) # Mark as done so we don't try it again
-            attempts += 1
-            print("🔄 Trying next video in list...")
-    
-    print("❌ Too many failed attempts. Exiting.")
+            # --- FAILURE (Skip & Retry) ---
+            print(f"⚠️ Video failed: {next_url}")
+            print("🔄 Marking as skipped and trying next video...")
+            update_history(next_url) # Isko history me daal do taaki dubara na aaye
+            attempt += 1
+            time.sleep(2)
+
+    print("❌ Too many failures. Exiting.")
     sys.exit(1)
