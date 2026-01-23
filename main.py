@@ -16,18 +16,23 @@ WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 SEO_TAGS = ["#reels", "#trending", "#viral", "#explore", "#love", "#shayari", "#instagram"]
 FORBIDDEN_WORDS = ["virtualaarvi", "aarvi", "video by", "uploaded by", "subscribe", "channel"]
 
+def clean_url(url):
+    # Remove quotes, commas, and whitespace from URL
+    return url.strip().strip('"').strip("'").strip(',')
+
 def get_next_video():
     processed_urls = []
     if os.path.exists(HISTORY_FILE):
         with open(HISTORY_FILE, 'r') as f:
-            processed_urls = [line.strip() for line in f.readlines()]
+            processed_urls = [clean_url(line) for line in f.readlines()]
 
     if not os.path.exists(VIDEO_LIST_FILE):
         print("❌ Error: videos.txt missing!")
         return None
 
     with open(VIDEO_LIST_FILE, 'r') as f:
-        all_urls = [line.strip() for line in f.readlines() if line.strip()]
+        # Clean URLs while reading (Removes accidental commas/quotes)
+        all_urls = [clean_url(line) for line in f.readlines() if line.strip()]
 
     for url in all_urls:
         if url not in processed_urls:
@@ -37,11 +42,8 @@ def get_next_video():
 def translate_and_shorten(text):
     try:
         if not text or not text.strip(): return None
-        # Translate to Hindi
         translated = GoogleTranslator(source='auto', target='hi').translate(text)
-        # Remove forbidden words
         if any(word in translated.lower() for word in FORBIDDEN_WORDS): return None
-        # Keep first 5 words
         words = translated.split()
         return " ".join(words[:5])
     except: return None
@@ -59,7 +61,6 @@ def generate_hashtags(original_tags):
         else: break
     return " ".join(final_tags[:8])
 
-# --- DIRECT DOWNLOADER (Fake Android) ---
 def download_video_data(url):
     print(f"⬇️ Processing: {url}")
     
@@ -67,7 +68,6 @@ def download_video_data(url):
         try: os.remove(f)
         except: pass
 
-    # Android Client Impersonation
     ydl_opts = {
         'format': 'best[ext=mp4]/best',
         'outtmpl': 'temp_video.%(ext)s',
@@ -97,12 +97,14 @@ def download_video_data(url):
                 title = info.get('title') or info.get('description') or "Reel"
                 hashtags = generate_hashtags(info.get('tags', []))
                 
-                # File check
                 found_files = glob.glob("temp_video*")
                 video_files = [f for f in found_files if not f.endswith('.vtt')]
                 if video_files: dl_filename = video_files[0]
                 
                 final_hindi_text = translate_and_shorten(title) or "देखिए आज का वीडियो ✨"
+            else:
+                print("❌ Download Failed (Might be private or deleted)")
+                
     except Exception as e:
         print(f"❌ Error: {e}")
         return None
@@ -118,7 +120,7 @@ def download_video_data(url):
     }
 
 def upload_to_catbox(filepath):
-    print("🚀 Uploading to Catbox (for Webhook)...")
+    print("🚀 Uploading to Catbox...")
     try:
         with open(filepath, "rb") as f:
             response = requests.post(
@@ -136,9 +138,8 @@ def send_notifications(video_data, catbox_url):
     print("\n--- Sending Notifications ---")
     tg_caption = f"{video_data['hindi_text']}\n.\n.\n.\n{video_data['hashtags']}"
     
-    # 1. Telegram (Sends VIDEO FILE)
+    # 1. Telegram
     if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-        print("📤 Sending Video File to Telegram...")
         tg_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
         try:
             with open(video_data['filename'], 'rb') as video_file:
@@ -147,9 +148,8 @@ def send_notifications(video_data, catbox_url):
                 print("✅ Telegram Sent!")
         except Exception as e: print(f"❌ Telegram Fail: {e}")
 
-    # 2. Webhook (Sends URL + Caption)
+    # 2. Webhook
     if WEBHOOK_URL and catbox_url:
-        print("📤 Sending URL to Webhook...")
         payload = {
             "content": tg_caption, 
             "video_url": catbox_url,
@@ -168,15 +168,14 @@ if __name__ == "__main__":
     if next_url:
         data = download_video_data(next_url)
         if data and data['filename']:
-            # Catbox upload is mandatory for Webhook
             catbox_link = upload_to_catbox(data['filename'])
-            
             send_notifications(data, catbox_link)
             update_history(next_url)
-            
-            # Cleanup
             if os.path.exists(data['filename']): os.remove(data['filename'])
             print("✅ Task Completed.")
+        else:
+            print("❌ Task Failed: Video not downloaded.")
+            sys.exit(1) # Fail the job if download fails
     else:
         print("💤 No new videos found.")
-        sys.exit(0) # Exit with success code (0) even if no video
+        sys.exit(0)
