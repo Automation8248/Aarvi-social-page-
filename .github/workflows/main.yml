@@ -1,10 +1,9 @@
-name: Aarvi page 
+name: Aarvi page
 
 on:
   schedule:
-    # Runs daily at 2:30 UTC (Approx 8:00 AM IST)
-    - cron: '30 2 * * *'
-  workflow_dispatch: # Allows manual run button
+    - cron: '30 2 * * *' # Daily ~8:00 AM IST
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -28,19 +27,18 @@ jobs:
 
       - name: Run Automation Script
         env:
+          # In Secrets ko Settings > Secrets and variables > Actions me dalein
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: python main.py
 
-      - name: Save History (Fix Git Error)
+      - name: Save History
+        if: always() # Hamesha save karega chahe fail ho
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
           git add history.txt
-          # Commit only if there are changes
-          git commit -m "Update history logs [skip ci]" || echo "No changes to commit"
-          # Pull latest changes to avoid conflict (The FIX)
+          git commit -m "Update history logs [skip ci]" || echo "No changes"
           git pull --rebase origin main
-          # Push changes
           git push origin main
