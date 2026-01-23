@@ -1,4 +1,4 @@
-name: Aarvi page
+name: Aarvi page 
 
 on:
   push:
@@ -23,14 +23,14 @@ jobs:
         with:
           python-version: '3.9'
 
-      # YAHAN CHANGE HAI: FFmpeg install karna zaroori hai
-      - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      # YAHAN CHANGE HAI: OpenCV ke liye library chahiye
+      - name: Install System Libs
+        run: sudo apt-get update && sudo apt-get install -y libgl1
 
       - name: Install Dependencies
         run: pip install -r requirements.txt
 
-      - name: Run AI Script
+      - name: Run OCR Script
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -39,8 +39,8 @@ jobs:
 
       - name: Save History
         run: |
-          git config --global user.name "AI Bot"
+          git config --global user.name "OCR Bot"
           git config --global user.email "bot@github.com"
           git add history.txt
-          git commit -m "Processed video" || echo "No changes"
+          git commit -m "Processed video with OCR" || echo "No changes"
           git push
