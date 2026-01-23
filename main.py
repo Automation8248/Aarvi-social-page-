@@ -1,11 +1,9 @@
 import os
 import requests
+import yt_dlp
 import sys
 import glob
 import re
-import random
-import time
-from bs4 import BeautifulSoup
 from deep_translator import GoogleTranslator
 
 # --- CONFIGURATION ---
@@ -17,19 +15,6 @@ WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 
 SEO_TAGS = ["#reels", "#trending", "#viral", "#explore", "#love", "#shayari"]
 FORBIDDEN_WORDS = ["virtualaarvi", "aarvi", "video by", "uploaded by", "subscribe", "channel"]
-
-# --- STEALTH HEADERS (Logic: Pretend to be Google/Bing Bot) ---
-# Instagram bots ko block karta hai, par Google Search ko allow karta hai.
-BOT_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
-    "Referer": "https://www.google.com/"
-}
-
-BROWSER_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.5",
-}
 
 def get_next_video():
     processed_urls = []
@@ -61,18 +46,16 @@ def translate_and_shorten(text):
     try:
         if not text or not text.strip(): return None
         translated = GoogleTranslator(source='auto', target='hi').translate(text)
-        if not is_text_safe(translated) or not is_text_safe(text): return None
         words = translated.split()
         return " ".join(words[:4])
     except: return None
 
 def generate_hashtags(original_tags):
     final_tags = ["#reels"]
-    forbidden = ["virtualaarvi", "aarvi"]
     if original_tags:
         for tag in original_tags:
             clean_tag = tag.replace(" ", "").lower()
-            if clean_tag not in forbidden and f"#{clean_tag}" not in final_tags:
+            if clean_tag not in ["virtualaarvi", "aarvi"] and f"#{clean_tag}" not in final_tags:
                 final_tags.append(f"#{clean_tag}")
     for seo in SEO_TAGS:
         if len(final_tags) < 6:
@@ -80,147 +63,80 @@ def generate_hashtags(original_tags):
         else: break
     return " ".join(final_tags[:6])
 
-def extract_shortcode(url):
-    try:
-        clean_url = url.split('?')[0].rstrip('/')
-        parts = clean_url.split('/')
-        if 'reel' in parts: return parts[parts.index('reel') + 1]
-        if 'p' in parts: return parts[parts.index('p') + 1]
-        return parts[-1]
-    except: return None
-
-# --- LOGIC 1: PICUKI (The Strongest Viewer) ---
-def fetch_via_picuki(shortcode):
-    print("🔄 Logic 1: Routing via Picuki (Masking GitHub IP)...")
-    url = f"https://www.picuki.com/media/{shortcode}"
-    
-    try:
-        resp = requests.get(url, headers=BROWSER_HEADERS, timeout=15)
-        if resp.status_code != 200:
-            print(f"⚠️ Picuki Status: {resp.status_code}")
-            return None, None
-            
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        
-        # Picuki mein video link script ya video tag mein hota hai
-        video_tag = soup.find('video')
-        video_url = None
-        
-        if video_tag and video_tag.get('src'):
-            video_url = video_tag['src']
-        
-        # Fallback: Finding in scripts or hidden inputs
-        if not video_url:
-            match = re.search(r'src="([^"]+\.mp4[^"]*)"', resp.text)
-            if match: video_url = match.group(1).replace("&amp;", "&")
-            
-        if video_url:
-            print("✅ Hidden Link Found via Picuki!")
-            # Caption scraping
-            caption = "Instagram Reel"
-            desc = soup.find('div', {'class': 'single-photo-description'})
-            if desc: caption = desc.get_text().strip()
-            return video_url, caption
-            
-    except Exception as e:
-        print(f"⚠️ Picuki Logic Error: {e}")
-        
-    return None, None
-
-# --- LOGIC 2: INSTANAVIGATION (Backup Viewer) ---
-def fetch_via_instanavigation(shortcode):
-    print("🔄 Logic 2: Routing via Instanavigation...")
-    # Yeh site API call use karti hai, hum usse simulate karenge
-    # Note: URL structure changes often, scraping headers
-    url = f"https://instanavigation.com/post/{shortcode}"
-    
-    try:
-        resp = requests.get(url, headers=BROWSER_HEADERS, timeout=15)
-        if resp.status_code == 200:
-            match = re.search(r'href="([^"]+\.mp4[^"]*)"', resp.text)
-            if match:
-                print("✅ Found via Instanavigation!")
-                return match.group(1).replace("&amp;", "&"), "Instagram Reel"
-    except: pass
-    return None, None
-
-# --- LOGIC 3: DIRECT GOOGLEBOT SPOOF (Last Resort) ---
-def fetch_via_googlebot(url):
-    print("🔄 Logic 3: Spoofing as Googlebot...")
-    # Instagram might let Googlebot access the page
-    try:
-        resp = requests.get(url, headers=BOT_HEADERS, timeout=10)
-        if resp.status_code == 200:
-            # Try finding og:video
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            meta_video = soup.find("meta", property="og:video")
-            if meta_video:
-                print("✅ Googlebot Trick Worked!")
-                return meta_video["content"], "Instagram Reel"
-    except: pass
-    return None, None
-
+# --- DIRECT INSTAGRAM DOWNLOADER (No 3rd Party) ---
 def download_video_data(url):
-    print(f"⬇️ Processing: {url}")
+    print(f"⬇️ Processing Direct Link: {url}")
     
+    # Safai
     for f in glob.glob("temp_video*"):
         try: os.remove(f)
         except: pass
 
-    shortcode = extract_shortcode(url)
-    if not shortcode:
-        print("❌ Invalid URL")
-        return None
-
-    # --- EXECUTE LOGIC CHAIN ---
-    # Picuki sabse reliable hai kyunki wo content ko proxy karta hai
-    video_download_url, title = fetch_via_picuki(shortcode)
-    
-    if not video_download_url:
-        video_download_url, title = fetch_via_instanavigation(shortcode)
+    # --- MAGIC SETTINGS (Fake Android Client) ---
+    ydl_opts = {
+        'format': 'best[ext=mp4]/best',
+        'outtmpl': 'temp_video.%(ext)s',
+        'quiet': True,
+        'no_warnings': True,
+        'ignoreerrors': True,
         
-    if not video_download_url:
-        video_download_url, title = fetch_via_googlebot(url)
-
-    if not video_download_url:
-        print("❌ All Logic Failed. GitHub IP is heavily blacklisted.")
-        return None
+        # Ye sabse zaroori line hai:
+        # Hum bata rahe hain ki hum 'Android App' hain, GitHub nahi.
+        'extractor_args': {
+            'instagram': {
+                'impersonate': ['android']
+            }
+        },
+        
+        # Headers taaki block na ho
+        'http_headers': {
+            'User-Agent': 'Instagram 219.0.0.12.117 Android',
+            'Accept-Language': 'en-US',
+        }
+    }
     
-    # Download File
+    dl_filename = None
+    title = "Instagram Reel"
+    final_hindi_text = ""
+    hashtags = ""
+
     try:
-        print("📥 Downloading Video File...")
-        # Picuki links often require Picuki as referrer
-        dl_headers = {
-            "User-Agent": BROWSER_HEADERS["User-Agent"],
-            "Referer": "https://www.picuki.com/"
-        }
-        
-        video_res = requests.get(video_download_url, headers=dl_headers, stream=True)
-        
-        dl_filename = "temp_video.mp4"
-        with open(dl_filename, 'wb') as f:
-            for chunk in video_res.iter_content(chunk_size=1024):
-                if chunk: f.write(chunk)
-        
-        # Check size to ensure it's not an HTML error page
-        if os.path.getsize(dl_filename) < 1000:
-            print("❌ File too small (likely an error page).")
-            return None
-        
-        hashtags = generate_hashtags([])
-        final_hindi_text = translate_and_shorten(title) or "देखिए आज का वीडियो ✨"
-
-        return {
-            "filename": dl_filename,
-            "title": title,
-            "hindi_text": final_hindi_text,
-            "hashtags": hashtags,
-            "original_url": url
-        }
+        print("⏳ Contacting Instagram Servers Directly...")
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # Metadata extract karna
+            info = ydl.extract_info(url, download=True)
+            
+            if info:
+                print("✅ Direct Download Successful!")
+                title = info.get('title', '') or info.get('description', '') or "Instagram Reel"
+                hashtags = generate_hashtags(info.get('tags', []))
+                
+                # File dhoondhna
+                found_files = glob.glob("temp_video*")
+                video_files = [f for f in found_files if not f.endswith('.vtt')]
+                if video_files:
+                    dl_filename = video_files[0]
+                    
+                # Hindi Translation
+                final_hindi_text = translate_and_shorten(title) or "देखिए आज का वीडियो ✨"
+            else:
+                print("❌ Instagram Server rejected the connection.")
+                return None
 
     except Exception as e:
-        print(f"❌ File Download Error: {e}")
+        print(f"❌ Direct Download Error: {e}")
         return None
+
+    if not dl_filename:
+        return None
+
+    return {
+        "filename": dl_filename,
+        "title": title,
+        "hindi_text": final_hindi_text,
+        "hashtags": hashtags,
+        "original_url": url
+    }
 
 def upload_to_catbox(filepath):
     print("🚀 Uploading to Catbox...")
@@ -229,49 +145,43 @@ def upload_to_catbox(filepath):
             response = requests.post("https://catbox.moe/user/api.php", data={"reqtype": "fileupload"}, files={"fileToUpload": f}, timeout=120)
             if response.status_code == 200:
                 return response.text.strip()
-            else: return None
-    except: return None
+    except: pass
+    return None
 
 def send_notifications(video_data, catbox_url):
     print("\n--- Sending Notifications ---")
     tg_caption = f"{video_data['hindi_text']}\n.\n.\n.\n.\n.\n{video_data['hashtags']}"
     
+    # Telegram
     if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-        print("📤 Telegram Video Sending...")
         tg_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
         try:
             with open(video_data['filename'], 'rb') as video_file:
-                payload = {"chat_id": str(TELEGRAM_CHAT_ID), "caption": tg_caption, "parse_mode": "Markdown"}
-                files = {'video': video_file}
-                requests.post(tg_url, data=payload, files=files)
+                requests.post(tg_url, data={"chat_id": str(TELEGRAM_CHAT_ID), "caption": tg_caption}, files={'video': video_file})
                 print("✅ Telegram Sent!")
-        except Exception as e: print(f"❌ Telegram Error: {e}")
+        except: pass
 
-    if WEBHOOK_URL:
-        if catbox_url and "catbox.moe" in catbox_url:
-            print(f"📤 Webhook Sending...")
-            payload = {
-                "content": tg_caption, 
-                "video_url": catbox_url,
-                "title_original": video_data['title']
-            }
-            try: requests.post(WEBHOOK_URL, json=payload)
-            except: pass
+    # Webhook
+    if WEBHOOK_URL and catbox_url:
+        try:
+            requests.post(WEBHOOK_URL, json={"content": tg_caption, "video_url": catbox_url})
+            print("✅ Webhook Sent!")
+        except: pass
 
 def update_history(url):
     with open(HISTORY_FILE, 'a') as f: f.write(url + '\n')
 
 if __name__ == "__main__":
     next_url = get_next_video()
-    if not next_url:
+    if next_url:
+        data = download_video_data(next_url)
+        if data and data['filename']:
+            catbox_link = upload_to_catbox(data['filename'])
+            send_notifications(data, catbox_link)
+            update_history(next_url)
+            # Cleanup
+            if os.path.exists(data['filename']): os.remove(data['filename'])
+            print("✅ Task Done.")
+    else:
         print("💤 No new videos.")
         sys.exit(0)
-    
-    data = download_video_data(next_url)
-    if data and data['filename']:
-        catbox_link = upload_to_catbox(data['filename'])
-        send_notifications(data, catbox_link)
-        update_history(next_url)
-        if os.path.exists(data['filename']): os.remove(data['filename'])
-        print("✅ Task Done.")
-    else: sys.exit(1)
