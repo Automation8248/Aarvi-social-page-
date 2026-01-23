@@ -12,7 +12,7 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 
-# RapidAPI Key (Jo aapne di thi)
+# RapidAPI Credentials (Instagram120)
 RAPID_API_KEY = "1d87db308dmshd21171d762615b5p1368bejsnabb286989baf"
 RAPID_HOST = "instagram120.p.rapidapi.com"
 
@@ -53,6 +53,25 @@ def translate_and_shorten(text):
         return " ".join(words[:4])
     except: return None
 
+def extract_details(url):
+    # Extracts Username and Shortcode from URL
+    # Example: https://www.instagram.com/virtualaarvi/reel/DT0BUcACEYk/
+    try:
+        parts = url.rstrip('/').split('/')
+        shortcode = parts[-1]
+        # Username is usually 2 steps back from reel/p, or 3 from end
+        if 'reel' in parts:
+            idx = parts.index('reel')
+            username = parts[idx-1]
+        elif 'p' in parts:
+            idx = parts.index('p')
+            username = parts[idx-1]
+        else:
+            return None, None
+        return username, shortcode
+    except:
+        return None, None
+
 def generate_hashtags(original_tags):
     final_tags = ["#aarvi"]
     forbidden = ["virtualaarvi", "aarvi"]
@@ -68,67 +87,94 @@ def generate_hashtags(original_tags):
     return " ".join(final_tags[:5])
 
 def download_video_data(url):
-    print(f"⬇️ Processing URL via RapidAPI: {url}")
+    print(f"⬇️ Processing URL: {url}")
     
     for f in glob.glob("temp_video*"):
         try: os.remove(f)
         except: pass
 
-    # --- RAPID API LOGIC (Fixed Endpoints) ---
+    # 1. Extract Username & Shortcode
+    username, target_shortcode = extract_details(url)
+    if not username or not target_shortcode:
+        print("❌ Error: Could not parse Username or ID from URL.")
+        return None
+    
+    print(f"🔹 Target: User='{username}', Code='{target_shortcode}'")
+
+    # 2. Call RapidAPI (Using the working 'posts' endpoint)
+    # We fetch the user's latest posts and look for our video in the list
+    api_url = f"https://{RAPID_HOST}/api/instagram/posts"
+    
     headers = {
         "x-rapidapi-key": RAPID_API_KEY,
-        "x-rapidapi-host": RAPID_HOST
+        "x-rapidapi-host": RAPID_HOST,
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "username": username,
+        "maxId": "" # Fetch latest page
     }
 
-    # Hum do alag-alag endpoints try karenge agar ek fail hua to
-    endpoints = [
-        "https://instagram120.p.rapidapi.com/download-video",  # Try 1
-        "https://instagram120.p.rapidapi.com/media/download",  # Try 2
-    ]
-    
-    video_download_url = None
-    title = "Instagram Reel"
-
-    for api_url in endpoints:
-        try:
-            print(f"📡 Trying Endpoint: {api_url} ...")
-            querystring = {"url": url} # Yeh API usually full URL leti hai
-            
-            response = requests.get(api_url, headers=headers, params=querystring)
-            
-            if response.status_code == 200:
-                data = response.json()
-                
-                # Response se video link nikalna (Flexible logic)
-                if 'video_url' in data:
-                    video_download_url = data['video_url']
-                elif 'data' in data and 'video_url' in data['data']:
-                    video_download_url = data['data']['video_url']
-                elif 'result' in data and 'video_url' in data['result']:
-                    video_download_url = data['result']['video_url']
-                elif 'url' in data: # Kabhi kabhi direct url key hoti hai
-                    video_download_url = data['url']
-
-                # Agar URL mil gaya to loop break karo
-                if video_download_url:
-                    print("✅ Video Link Found!")
-                    # Title nikalna
-                    if 'caption' in data: title = data['caption']
-                    elif 'title' in data: title = data['title']
-                    break
-            else:
-                print(f"⚠️ Endpoint failed: {response.status_code}")
-                
-        except Exception as e:
-            print(f"⚠️ Connection Error: {e}")
-            continue
-
-    if not video_download_url:
-        print("❌ RapidAPI Failed to find video URL. Key might be wrong or API endpoint changed.")
-        return None
-
-    # Download File
     try:
+        print(f"📡 Calling API: {api_url} ...")
+        response = requests.post(api_url, json=payload, headers=headers)
+        
+        if response.status_code != 200:
+            print(f"❌ API Error: {response.status_code} - {response.text}")
+            return None
+
+        data = response.json()
+        
+        # 3. Search for the specific video in the results
+        video_download_url = None
+        title = "Instagram Reel"
+        
+        # This structure depends on instagram120 response, usually it's a list
+        # We loop through all posts to find the one matching our 'target_shortcode'
+        posts_list = []
+        if isinstance(data, list): 
+            posts_list = data
+        elif 'result' in data: 
+            posts_list = data['result']
+        elif 'data' in data:
+            posts_list = data['data']
+            
+        found = False
+        for post in posts_list:
+            # Check if this post matches our shortcode
+            # API might use 'code', 'shortcode', or 'pk'
+            code = post.get('code') or post.get('shortcode')
+            
+            if code == target_shortcode:
+                found = True
+                print("✅ Found matching video in user's post list!")
+                
+                # Extract Video URL
+                if 'video_url' in post:
+                    video_download_url = post['video_url']
+                elif 'video_versions' in post:
+                    video_download_url = post['video_versions'][0]['url']
+                
+                # Extract Caption
+                if 'caption' in post:
+                    if isinstance(post['caption'], dict):
+                        title = post['caption'].get('text', title)
+                    else:
+                        title = str(post['caption'])
+                break
+        
+        if not found:
+            print(f"⚠️ Video {target_shortcode} not found in {username}'s recent posts.")
+            # Fallback: If not found, maybe take the LATEST video if configured?
+            # For now, we return None to be safe.
+            return None
+
+        if not video_download_url:
+            print("❌ Found post but no Video URL (maybe it's an image?).")
+            return None
+
+        # 4. Download File
         print("📥 Downloading video file...")
         video_res = requests.get(video_download_url, stream=True)
         dl_filename = "temp_video.mp4"
@@ -148,7 +194,7 @@ def download_video_data(url):
         }
 
     except Exception as e:
-        print(f"❌ File Save Error: {e}")
+        print(f"❌ Error: {e}")
         return None
 
 def upload_to_catbox(filepath):
