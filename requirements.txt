@@ -1,4 +1,3 @@
 requests
 yt-dlp
-opencv-python-headless
-pytesseract
+deep-translator
