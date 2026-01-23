@@ -17,7 +17,7 @@ SEO_TAGS = ["#reels", "#trending", "#viral", "#explore", "#love", "#shayari", "#
 FORBIDDEN_WORDS = ["virtualaarvi", "aarvi", "video by", "uploaded by", "subscribe", "channel"]
 
 def clean_url(url):
-    # Remove quotes, commas, and whitespace from URL
+    # Remove quotes, commas, and whitespace
     return url.strip().strip('"').strip("'").strip(',')
 
 def get_next_video():
@@ -31,7 +31,7 @@ def get_next_video():
         return None
 
     with open(VIDEO_LIST_FILE, 'r') as f:
-        # Clean URLs while reading (Removes accidental commas/quotes)
+        # Read all URLs and filter out processed ones
         all_urls = [clean_url(line) for line in f.readlines() if line.strip()]
 
     for url in all_urls:
@@ -103,7 +103,8 @@ def download_video_data(url):
                 
                 final_hindi_text = translate_and_shorten(title) or "देखिए आज का वीडियो ✨"
             else:
-                print("❌ Download Failed (Might be private or deleted)")
+                print("❌ Download Failed (Sensitive Content/Deleted)")
+                return None
                 
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -138,7 +139,6 @@ def send_notifications(video_data, catbox_url):
     print("\n--- Sending Notifications ---")
     tg_caption = f"{video_data['hindi_text']}\n.\n.\n.\n{video_data['hashtags']}"
     
-    # 1. Telegram
     if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
         tg_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
         try:
@@ -148,7 +148,6 @@ def send_notifications(video_data, catbox_url):
                 print("✅ Telegram Sent!")
         except Exception as e: print(f"❌ Telegram Fail: {e}")
 
-    # 2. Webhook
     if WEBHOOK_URL and catbox_url:
         payload = {
             "content": tg_caption, 
@@ -163,19 +162,35 @@ def send_notifications(video_data, catbox_url):
 def update_history(url):
     with open(HISTORY_FILE, 'a') as f: f.write(url + '\n')
 
+# --- MAIN EXECUTION WITH AUTO-SKIP ---
 if __name__ == "__main__":
-    next_url = get_next_video()
-    if next_url:
+    max_attempts = 10 # Try up to 10 videos before giving up
+    attempts = 0
+
+    while attempts < max_attempts:
+        next_url = get_next_video()
+        if not next_url:
+            print("💤 No new videos found.")
+            sys.exit(0)
+        
+        # Try downloading
         data = download_video_data(next_url)
+        
         if data and data['filename']:
+            # SUCCESS
             catbox_link = upload_to_catbox(data['filename'])
             send_notifications(data, catbox_link)
-            update_history(next_url)
+            update_history(next_url) # Mark successful
+            
             if os.path.exists(data['filename']): os.remove(data['filename'])
-            print("✅ Task Completed.")
+            print("✅ Task Completed Successfully.")
+            sys.exit(0) # Stop after 1 successful post
         else:
-            print("❌ Task Failed: Video not downloaded.")
-            sys.exit(1) # Fail the job if download fails
-    else:
-        print("💤 No new videos found.")
-        sys.exit(0)
+            # FAILURE (Skip this video)
+            print(f"⚠️ Skipping bad video: {next_url}")
+            update_history(next_url) # Mark as done so we don't try it again
+            attempts += 1
+            print("🔄 Trying next video in list...")
+    
+    print("❌ Too many failed attempts. Exiting.")
+    sys.exit(1)
