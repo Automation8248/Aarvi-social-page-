@@ -65,60 +65,60 @@ def generate_hashtags(original_tags):
         else: break
     return " ".join(final_tags[:6])
 
-# --- NEW: SAVEIG WEB SCRAPER (Bypass Logic) ---
-def fetch_from_saveig(url):
-    print("🔄 Connecting to Downloader Website (Bypassing Instagram)...")
+# --- NEW: INDOWN SCRAPER (More Stable) ---
+def fetch_from_indown(url):
+    print("🔄 Connecting to Indown.io (Bypassing Instagram)...")
     
-    # SaveIG Endpoint
-    api_url = "https://v3.saveig.app/api/ajaxSearch"
+    session = requests.Session()
     
+    # Headers are critical for scraping
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        "Origin": "https://saveig.app",
-        "Referer": "https://saveig.app/en",
-    }
-    
-    data = {
-        "q": url,
-        "t": "media",
-        "lang": "en"
+        "Referer": "https://indown.io/",
+        "Origin": "https://indown.io",
+        "Content-Type": "application/x-www-form-urlencoded"
     }
 
     try:
-        # Step 1: Request Video Link
-        response = requests.post(api_url, data=data, headers=headers, timeout=20)
+        # Step 1: Initial Handshake (Cookies lene ke liye)
+        session.get("https://indown.io", headers=headers, timeout=10)
+        
+        # Step 2: POST Request (Link bhejna)
+        post_url = "https://indown.io/download"
+        data = {
+            "link": url,
+            "referer": "https://indown.io"
+        }
+        
+        print("📡 Sending link to Indown server...")
+        response = session.post(post_url, data=data, headers=headers, timeout=20)
         
         if response.status_code != 200:
-            print(f"⚠️ Downloader Site Error: {response.status_code}")
+            print(f"⚠️ Server returned status: {response.status_code}")
             return None
-            
-        json_data = response.json()
         
-        # Step 2: Extract Link from HTML Response
-        # Response comes as JSON with HTML inside 'data' key
-        if 'data' in json_data:
-            html_content = json_data['data']
+        # Step 3: Extract Video Link from HTML
+        html = response.text
+        
+        # Regex to find .mp4 link inside the response
+        # Indown usually puts link in <source src="..."> or <a href="...">
+        video_match = re.search(r'src="([^"]+\.mp4[^"]*)"', html)
+        
+        if not video_match:
+            # Fallback regex search
+            video_match = re.search(r'href="([^"]+\.mp4[^"]*)"', html)
             
-            # Regex to find the download link inside the HTML
-            # Looking for href that typically contains download params
-            match = re.search(r'href="(https?://[^"]+)"', html_content)
-            
-            if match:
-                video_url = match.group(1).replace("&amp;", "&")
-                print("✅ Video Link Extracted successfully!")
-                return video_url
-            else:
-                print("❌ Could not find download link in HTML response.")
-                # Debug print
-                # print(html_content[:200]) 
-                return None
+        if video_match:
+            video_url = video_match.group(1).replace("&amp;", "&")
+            print("✅ Video Link Extracted Successfully!")
+            return video_url
         else:
-            print("❌ Invalid response from downloader site.")
+            print("❌ Could not find video link in HTML. Indown might be blocked or changed layout.")
+            # Debug: print(html[:500])
             return None
 
     except Exception as e:
-        print(f"❌ Connection Failed: {e}")
+        print(f"❌ Scraping Failed: {e}")
         return None
 
 def download_video_data(url):
@@ -128,8 +128,8 @@ def download_video_data(url):
         try: os.remove(f)
         except: pass
 
-    # --- USE SAVEIG SCRAPER ---
-    video_download_url = fetch_from_saveig(url)
+    # --- USE INDOWN SCRAPER ---
+    video_download_url = fetch_from_indown(url)
     
     if not video_download_url:
         print("❌ Failed to fetch video link.")
@@ -138,7 +138,7 @@ def download_video_data(url):
     # Download File
     try:
         print("📥 Downloading Video File...")
-        # Headers needed to avoid 403 on the CDN
+        # Headers needed to avoid 403
         file_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         }
@@ -150,7 +150,7 @@ def download_video_data(url):
             for chunk in video_res.iter_content(chunk_size=1024):
                 if chunk: f.write(chunk)
         
-        # Generic Metadata (Since scraping metadata is hard this way)
+        # Generic Metadata
         title = "Instagram Reel"
         hashtags = generate_hashtags([])
         final_hindi_text = "देखिए आज का वीडियो ✨"
