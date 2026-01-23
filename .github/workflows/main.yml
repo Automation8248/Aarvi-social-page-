@@ -1,49 +1,45 @@
-name: Insta Bypass Bot
+name: Run Instagram Poster
 
 on:
   push:
-    paths:
-      - 'link.txt'
-  workflow_dispatch:
+    branches: [ main ]
   schedule:
+    # --- DAILY SETTING ---
+    # '0 0 * * *' ka matlab hai UTC time par raat 12 baje.
+    # India (IST) mein yeh subah ke 5:30 AM par chalega.
     - cron: '0 0 * * *'
+  workflow_dispatch:      # Manual run button bhi rahega
 
 jobs:
-  run-bypass-bot:
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
-    permissions:
-      contents: write
 
     steps:
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-          cache: 'pip'
 
-      - name: Install Tesseract
+      - name: Install Dependencies
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y tesseract-ocr libtesseract-dev
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: Install Python Libs
-        run: pip install -r requirements.txt
-
-      - name: Run Script
+      - name: Run Automation Script
         env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
-        run: python main.py
-
-      - name: Update History
         run: |
-          git config --global user.name "Bypass Bot"
-          git config --global user.email "bot@github.com"
+          python main.py
+
+      - name: Save History
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
           git add history.txt
-          git commit -m "Processed Reel" || echo "No changes"
+          git commit -m "Update history logs" || echo "No changes to commit"
           git push
