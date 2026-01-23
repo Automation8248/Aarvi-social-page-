@@ -5,6 +5,7 @@ import glob
 import re
 import time
 import random
+from bs4 import BeautifulSoup
 from deep_translator import GoogleTranslator
 
 # --- CONFIGURATION ---
@@ -17,11 +18,10 @@ WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 SEO_TAGS = ["#reels", "#trending", "#viral", "#explore", "#love", "#shayari"]
 FORBIDDEN_WORDS = ["virtualaarvi", "aarvi", "video by", "uploaded by", "subscribe", "channel"]
 
-# User Agents list to trick servers
+# User Agents (Browser banne ke liye)
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
 ]
 
 def get_next_video():
@@ -73,41 +73,60 @@ def generate_hashtags(original_tags):
         else: break
     return " ".join(final_tags[:6])
 
-# --- SCRAPER FUNCTIONS ---
+def extract_shortcode(url):
+    try:
+        clean_url = url.split('?')[0].rstrip('/')
+        parts = clean_url.split('/')
+        if 'reel' in parts: return parts[parts.index('reel') + 1]
+        if 'p' in parts: return parts[parts.index('p') + 1]
+        return parts[-1]
+    except: return None
 
-def fetch_generic_extractor(url, domain, referer):
-    print(f"🔄 Trying Source: {domain} ...")
-    api_url = f"https://{domain}/api/ajaxSearch"
-    
-    headers = {
-        "User-Agent": random.choice(USER_AGENTS),
-        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-        "Origin": f"https://{domain}",
-        "Referer": referer,
-    }
-    
-    data = {"q": url, "t": "media", "lang": "en"}
+# --- NEW: MIRROR SITE SCRAPERS ---
+
+def fetch_from_imginn(shortcode):
+    print("🔄 Trying Mirror 1: Imginn...")
+    url = f"https://imginn.com/p/{shortcode}/"
+    headers = {"User-Agent": random.choice(USER_AGENTS)}
     
     try:
-        resp = requests.post(api_url, data=data, headers=headers, timeout=15)
+        resp = requests.get(url, headers=headers, timeout=15)
         if resp.status_code != 200:
-            print(f"⚠️ {domain} Blocked us (Status: {resp.status_code})")
-            return None
+            print(f"⚠️ Imginn Error: {resp.status_code}")
+            return None, None
             
-        json_data = resp.json()
-        if 'data' in json_data:
-            html = json_data['data']
-            # Regex to find link
-            match = re.search(r'href="(https?://[^"]+)"', html)
-            if match:
-                link = match.group(1).replace("&amp;", "&")
-                # Filter out junk links
-                if "instagram.com" not in link and "facebook.com" not in link:
-                    print(f"✅ Success from {domain}!")
-                    return link
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        
+        # Video link dhoondhna
+        video_tag = soup.find('a', {'class': 'download-btn'})
+        if not video_tag and 'href' in str(video_tag):
+             video_tag = soup.find('video')
+             
+        video_url = None
+        if video_tag and video_tag.has_attr('href'):
+            video_url = video_tag['href']
+        elif video_tag and video_tag.has_attr('src'):
+            video_url = video_tag['src']
+            
+        # Caption dhoondhna
+        caption = "Instagram Reel"
+        desc_tag = soup.find('p', {'class': 'desc'})
+        if desc_tag: caption = desc_tag.get_text().strip()
+            
+        if video_url:
+            print("✅ Found video on Imginn!")
+            return video_url, caption
     except Exception as e:
-        print(f"⚠️ Error on {domain}: {e}")
-    return None
+        print(f"⚠️ Imginn Failed: {e}")
+    return None, None
+
+def fetch_from_picuki(shortcode):
+    print("🔄 Trying Mirror 2: Picuki...")
+    # Picuki ke liye thoda complex logic chahiye hota hai URL banane ke liye
+    # Isliye hum Google Cache ya directly try karenge
+    # Lekin Picuki search based hai, direct link mushkil hai without exact ID mapping
+    # Isliye hum 'Dumpoir' try karte hain
+    return None, None
 
 def download_video_data(url):
     print(f"⬇️ Processing: {url}")
@@ -116,32 +135,24 @@ def download_video_data(url):
         try: os.remove(f)
         except: pass
 
-    video_download_url = None
-    
-    # --- MULTI-SOURCE ATTACK PLAN ---
-    # Hum alag-alag websites try karenge jo shayad GitHub ko abhi tak block na kiye hon
-    
-    sources = [
-        ("reelssave.com", "https://reelssave.com/en"),
-        ("v3.igram.world", "https://igram.world/"),
-        ("snapinsta.app", "https://snapinsta.app/"),
-        ("fastdl.app", "https://fastdl.app/en")
-    ]
-    
-    for domain, referer in sources:
-        video_download_url = fetch_generic_extractor(url, domain, referer)
-        if video_download_url:
-            break
-        time.sleep(2) # Thoda wait taaki spam na lage
+    shortcode = extract_shortcode(url)
+    if not shortcode:
+        print("❌ Invalid URL")
+        return None
+        
+    print(f"🔹 ID Detected: {shortcode}")
 
+    # --- ATTEMPT MIRROR SITES ---
+    # Ye sites GitHub ko block nahi karti kyunki ye tools nahi, "Viewers" hain
+    video_download_url, title = fetch_from_imginn(shortcode)
+    
     if not video_download_url:
-        print("❌ All Sources Failed. GitHub Server IP is totally blacklisted.")
+        print("❌ Mirror sites also failed. GitHub IP is heavily restricted.")
         return None
     
     # Download File
     try:
         print("📥 Downloading Video File...")
-        # Headers needed to avoid 403 on the CDN
         file_headers = {"User-Agent": random.choice(USER_AGENTS)}
         
         video_res = requests.get(video_download_url, headers=file_headers, stream=True)
@@ -151,15 +162,12 @@ def download_video_data(url):
             for chunk in video_res.iter_content(chunk_size=1024):
                 if chunk: f.write(chunk)
         
-        # Check if file is valid (not empty)
         if os.path.getsize(dl_filename) < 1000:
-            print("❌ Downloaded file is too small (might be an error page).")
+            print("❌ Downloaded file is empty/corrupt.")
             return None
         
-        # Generic Metadata
-        title = "Instagram Reel"
         hashtags = generate_hashtags([])
-        final_hindi_text = "देखिए आज का वीडियो ✨"
+        final_hindi_text = translate_and_shorten(title) or "देखिए आज का वीडियो ✨"
 
         return {
             "filename": dl_filename,
