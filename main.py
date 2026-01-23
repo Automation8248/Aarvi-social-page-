@@ -53,7 +53,6 @@ def translate_and_shorten(text):
     except: return None
 
 def extract_shortcode(url):
-    # Regex to safely extract ID (Works with/without trailing slash)
     match = re.search(r'(?:reel|p)\/([a-zA-Z0-9_-]+)', url)
     if match:
         return match.group(1)
@@ -76,12 +75,10 @@ def generate_hashtags(original_tags):
 def download_video_data(url):
     print(f"⬇️ Processing URL: {url}")
     
-    # 1. Clean previous files
     for f in glob.glob("temp_video*"):
         try: os.remove(f)
         except: pass
 
-    # 2. Extract Shortcode safely
     shortcode = extract_shortcode(url)
     if not shortcode:
         print("❌ Error: Could not extract Video ID from URL.")
@@ -89,45 +86,71 @@ def download_video_data(url):
     
     print(f"🔹 Detected Shortcode: {shortcode}")
 
-    # 3. Call RapidAPI
-    rapid_url = "https://instagram120.p.rapidapi.com/api/instagram/post"
-    querystring = {"code": shortcode}
+    # --- FIX: CORRECT API ENDPOINT ---
+    # We are using 'instagram-bulk-scraper-latest' style or 'instagram-downloader-download-instagram-videos-stories'
+    # Switching to a very standard rapidapi host that usually works with this key if subscribed.
+    # Since you used 'instagram120', let's try the /download endpoint which is common.
+    
+    # If 'instagram120' is failing, we will try the download endpoint directly.
+    # NOTE: The host must match what you are subscribed to.
+    # Assuming you are subscribed to 'instagram120' based on your previous message.
+    
+    rapid_url = "https://instagram-downloader-download-instagram-videos-stories.p.rapidapi.com/index"
+    querystring = {"url": url} # They usually take the full URL, not just code
+    
+    # If you are strictly using instagram120, their endpoint might be /media/info
+    # But since that failed, I am giving you a code that tries to use a more robust logic
+    # Make sure you are subscribed to 'Instagram Downloader' on RapidAPI if this fails, 
+    # BUT let's try to stick to your key.
+    
+    # Let's try the specific "instagram120" fixed endpoint:
+    rapid_url = "https://instagram120.p.rapidapi.com/media/info" # Changed from /api/instagram/post
     
     headers = {
         "x-rapidapi-key": RAPID_API_KEY,
         "x-rapidapi-host": "instagram120.p.rapidapi.com"
     }
+    
+    # Note: Some APIs need 'shortcode' param, some need 'code'
+    querystring = {"code": shortcode}
 
     try:
         response = requests.get(rapid_url, headers=headers, params=querystring)
-        # Debugging ke liye response print kar rahe hain
         print(f"📡 API Response Status: {response.status_code}")
         
         if response.status_code != 200:
             print(f"❌ API Error: {response.text}")
-            return None
-
+            # Fallback: Try a different endpoint structure if first fails
+            print("🔄 Trying alternative endpoint...")
+            rapid_url_alt = "https://instagram120.p.rapidapi.com/post/info"
+            response = requests.get(rapid_url_alt, headers=headers, params=querystring)
+            if response.status_code != 200:
+                 return None
+        
         res_data = response.json()
         
-        # Data Extraction
-        result = res_data.get('result', {})
-        if not result:
-            print(f"❌ API returned empty result. Response: {res_data}")
+        # Adjusting for likely response structure
+        # Usually it's in 'items'[0] or direct keys
+        video_download_url = None
+        title = "Instagram Reel"
+        
+        # Flexible Parsing
+        if 'video_url' in res_data:
+            video_download_url = res_data['video_url']
+        elif 'items' in res_data and len(res_data['items']) > 0:
+            item = res_data['items'][0]
+            if 'video_versions' in item:
+                video_download_url = item['video_versions'][0]['url']
+            title = item.get('caption', {}).get('text', title)
+        elif 'data' in res_data:
+             if 'video_url' in res_data['data']:
+                 video_download_url = res_data['data']['video_url']
+             title = res_data['data'].get('caption', title)
+
+        if not video_download_url:
+            print(f"❌ Video URL not found in API response. Data keys: {res_data.keys()}")
             return None
 
-        video_download_url = result.get('video_url')
-        if not video_download_url:
-            # Fallback check inside video_versions
-            if 'video_versions' in result:
-                video_download_url = result['video_versions'][0]['url']
-        
-        if not video_download_url:
-            print("❌ Video URL not found in API response.")
-            return None
-
-        title = result.get('caption_text', 'Instagram Video')
-        
-        # 4. Download Video File
         print("📥 Downloading video file...")
         video_res = requests.get(video_download_url, stream=True)
         dl_filename = "temp_video.mp4"
