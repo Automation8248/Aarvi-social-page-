@@ -1,6 +1,5 @@
 import os
 import requests
-import yt_dlp
 import sys
 import glob
 import re
@@ -13,7 +12,7 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 
-# RapidAPI Key (Isse GitHub Secrets mein add karna behtar hai)
+# RapidAPI Key
 RAPID_API_KEY = "1d87db308dmshd21171d762615b5p1368bejsnabb286989baf"
 
 SEO_TAGS = ["#reels", "#trending", "#viral", "#explore", "#love", "#shayari"]
@@ -53,44 +52,21 @@ def translate_and_shorten(text):
         return " ".join(words[:4])
     except: return None
 
-def get_smart_caption_text(vtt_file_path, description, title):
-    if vtt_file_path and os.path.exists(vtt_file_path):
-        try:
-            with open(vtt_file_path, 'r', encoding='utf-8') as f: content = f.read()
-            lines = content.splitlines()
-            spoken_text = []
-            for line in lines:
-                if '-->' in line or line.strip() == '' or line.startswith('WEBVTT') or line.isdigit(): continue
-                clean = re.sub(r'<[^>]+>', '', line).strip()
-                clean = re.sub(r'\[.*?\]', '', clean)
-                if clean and clean not in spoken_text: spoken_text.append(clean)
-            
-            full_speech = " ".join(spoken_text[:3])
-            hindi_audio = translate_and_shorten(full_speech)
-            if hindi_audio: return hindi_audio
-        except Exception as e: print(f"⚠️ VTT Error: {e}")
-
-    if description:
-        clean_desc = description.split('\n')[0]
-        clean_desc = re.sub(r'#\w+', '', clean_desc).strip()
-        if is_text_safe(clean_desc):
-            hindi_desc = translate_and_shorten(clean_desc)
-            if hindi_desc: return hindi_desc
-
-    clean_title = re.sub(r'#\w+', '', title).strip()
-    if is_text_safe(clean_title):
-        hindi_title = translate_and_shorten(clean_title)
-        if hindi_title: return hindi_title
-
-    return "देखिए आज का वीडियो"
+def extract_shortcode(url):
+    # Regex to safely extract ID (Works with/without trailing slash)
+    match = re.search(r'(?:reel|p)\/([a-zA-Z0-9_-]+)', url)
+    if match:
+        return match.group(1)
+    return None
 
 def generate_hashtags(original_tags):
     final_tags = ["#aarvi"]
     forbidden = ["virtualaarvi", "aarvi"]
-    for tag in original_tags:
-        clean_tag = tag.replace(" ", "").lower()
-        if clean_tag not in forbidden and f"#{clean_tag}" not in final_tags:
-            final_tags.append(f"#{clean_tag}")
+    if original_tags:
+        for tag in original_tags:
+            clean_tag = tag.replace(" ", "").lower()
+            if clean_tag not in forbidden and f"#{clean_tag}" not in final_tags:
+                final_tags.append(f"#{clean_tag}")
     for seo in SEO_TAGS:
         if len(final_tags) < 5:
             if seo not in final_tags: final_tags.append(seo)
@@ -98,14 +74,24 @@ def generate_hashtags(original_tags):
     return " ".join(final_tags[:5])
 
 def download_video_data(url):
-    print(f"⬇️ Fetching via RapidAPI: {url}")
+    print(f"⬇️ Processing URL: {url}")
+    
+    # 1. Clean previous files
     for f in glob.glob("temp_video*"):
         try: os.remove(f)
         except: pass
 
-    # --- RAPID API INTEGRATION ---
-    rapid_url = "https://instagram120.p.rapidapi.com/api/instagram/post" # Single post info endpoint
-    querystring = {"code": url.split("/")[-2]} # Link se shortcode nikalna
+    # 2. Extract Shortcode safely
+    shortcode = extract_shortcode(url)
+    if not shortcode:
+        print("❌ Error: Could not extract Video ID from URL.")
+        return None
+    
+    print(f"🔹 Detected Shortcode: {shortcode}")
+
+    # 3. Call RapidAPI
+    rapid_url = "https://instagram120.p.rapidapi.com/api/instagram/post"
+    querystring = {"code": shortcode}
     
     headers = {
         "x-rapidapi-key": RAPID_API_KEY,
@@ -114,18 +100,35 @@ def download_video_data(url):
 
     try:
         response = requests.get(rapid_url, headers=headers, params=querystring)
-        res_data = response.json()
+        # Debugging ke liye response print kar rahe hain
+        print(f"📡 API Response Status: {response.status_code}")
         
-        # RapidAPI se video link aur info nikalna
-        video_download_url = res_data.get('result', {}).get('video_url')
-        title = res_data.get('result', {}).get('caption_text', 'Instagram Video')
-        
-        if not video_download_url:
-            print("❌ RapidAPI could not find video URL")
+        if response.status_code != 200:
+            print(f"❌ API Error: {response.text}")
             return None
 
-        # Video download karna
-        print("📥 Downloading file...")
+        res_data = response.json()
+        
+        # Data Extraction
+        result = res_data.get('result', {})
+        if not result:
+            print(f"❌ API returned empty result. Response: {res_data}")
+            return None
+
+        video_download_url = result.get('video_url')
+        if not video_download_url:
+            # Fallback check inside video_versions
+            if 'video_versions' in result:
+                video_download_url = result['video_versions'][0]['url']
+        
+        if not video_download_url:
+            print("❌ Video URL not found in API response.")
+            return None
+
+        title = result.get('caption_text', 'Instagram Video')
+        
+        # 4. Download Video File
+        print("📥 Downloading video file...")
         video_res = requests.get(video_download_url, stream=True)
         dl_filename = "temp_video.mp4"
         with open(dl_filename, 'wb') as f:
@@ -144,7 +147,7 @@ def download_video_data(url):
         }
 
     except Exception as e:
-        print(f"❌ RapidAPI Error: {e}")
+        print(f"❌ Unexpected Error: {e}")
         return None
 
 def upload_to_catbox(filepath):
@@ -154,8 +157,7 @@ def upload_to_catbox(filepath):
             response = requests.post("https://catbox.moe/user/api.php", data={"reqtype": "fileupload"}, files={"fileToUpload": f})
             if response.status_code == 200:
                 return response.text.strip()
-            else:
-                return None
+            else: return None
     except: return None
 
 def send_notifications(video_data, catbox_url):
@@ -175,7 +177,7 @@ def send_notifications(video_data, catbox_url):
 
     if WEBHOOK_URL:
         if catbox_url and "catbox.moe" in catbox_url:
-            print(f"📤 Webhook Sending (Link: {catbox_url})...")
+            print(f"📤 Webhook Sending...")
             payload = {
                 "content": tg_caption, 
                 "video_url": catbox_url,
