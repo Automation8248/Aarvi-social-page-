@@ -20,7 +20,7 @@ WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 SEO_TAGS = ["#reels", "#trending", "#viral", "#explore", "#love", "#shayari", "#instagram", "#instagood", "#india"]
 FORBIDDEN_WORDS = ["virtualaarvi", "aarvi", "video by", "uploaded by", "subscribe", "channel"]
 
-# --- 🌎 DEVICE PROFILES (Backup Identity) ---
+# --- 🌎 DEVICE PROFILES ---
 DEVICE_PROFILES = [
     {"name": "Samsung S24 Ultra", "type": "android", "ua": "Instagram 315.0.0.25.108 Android (34/14; 560dpi; 1440x3120; samsung; SM-S928B; e3q; qcom; en_US; 523410000)"},
     {"name": "iPhone 15 Pro Max", "type": "ios", "ua": "Instagram 315.0.0.25.105 iPhone16,2 iOS 17_1_1"},
@@ -72,16 +72,17 @@ def generate_hashtags(original_tags):
         else: break
     return " ".join(final_tags[:8])
 
-# --- 🛡️ PROXY HUNTER LOGIC ---
+# --- 🛡️ PROXY FINDER (The Key Solution) ---
 def get_proxies():
-    print("🛡️ Fetching fresh proxies...")
-    # Proxies specifically supporting HTTPS
-    url = "https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=3000&country=all&ssl=yes&anonymity=all"
+    print("🛡️ Searching for safe paths (Proxies)...")
+    # Fetching fresh public proxies
     try:
+        url = "https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=5000&country=all&ssl=all&anonymity=all"
         r = requests.get(url, timeout=10)
         if r.status_code == 200:
             proxies = r.text.strip().splitlines()
-            return [p.strip() for p in proxies if p.strip()]
+            # Sirf pehle 20 try karenge taaki time waste na ho
+            return [p.strip() for p in proxies if p.strip()][:20]
     except: pass
     return []
 
@@ -92,18 +93,18 @@ def download_video_data(url):
         try: os.remove(f)
         except: pass
 
-    # Get Proxies List
+    # Get Proxies
     proxy_list = get_proxies()
-    # Add 'None' at the end to try Direct connection if all proxies fail
-    proxy_list = proxy_list[:15] + [None] 
+    # Add 'None' at last to try direct connection as last resort
+    proxy_list.append(None) 
 
     dl_filename = None
     title = "Instagram Reel"
     final_hindi_text = ""
     hashtags = ""
 
-    # Try downloading with different proxies
-    for proxy in proxy_list:
+    # Try downloading using different proxies
+    for i, proxy in enumerate(proxy_list):
         device = random.choice(DEVICE_PROFILES)
         
         ydl_opts = {
@@ -117,10 +118,10 @@ def download_video_data(url):
         }
         
         if proxy:
-            print(f"🔄 Trying Proxy: {proxy} ...")
+            print(f"🔄 Attempt {i+1}: Trying via Proxy {proxy}...")
             ydl_opts['proxy'] = f"http://{proxy}"
         else:
-            print("⚠️ All proxies failed. Trying Direct Connection...")
+            print("⚠️ Proxies exhausted. Trying Direct Connection...")
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -133,14 +134,13 @@ def download_video_data(url):
                     if video_files: 
                         dl_filename = video_files[0]
                         final_hindi_text = translate_and_shorten(title) or "देखिए आज का वीडियो ✨"
-                        print("✅ Download Success!")
-                        break # Stop trying proxies, we got the file
-        except Exception as e:
-            # Proxy failed, try next one
-            continue
+                        print("✅ Download Success via Proxy!")
+                        break # Stop trying, we got it
+        except Exception:
+            continue # Try next proxy
 
     if not dl_filename: 
-        print("❌ All attempts failed.")
+        print("❌ All connection paths failed.")
         return None
 
     return {
