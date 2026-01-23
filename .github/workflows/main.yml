@@ -1,4 +1,4 @@
-name: Aarvi page 
+name: Fast OCR Bot
 
 on:
   push:
@@ -9,8 +9,9 @@ on:
     - cron: '0 0 * * *'
 
 jobs:
-  run-daily-bot:
+  run-fast-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 2  # Safety cutoff
     permissions:
       contents: write
 
@@ -22,25 +23,28 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
+          cache: 'pip' # Dependencies ko cache karega taki agli baar aur fast ho
 
-      # YAHAN CHANGE HAI: OpenCV ke liye library chahiye
+      # System Libraries (Tesseract is faster than installing PyTorch)
       - name: Install System Libs
-        run: sudo apt-get update && sudo apt-get install -y libgl1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg tesseract-ocr libtesseract-dev
 
-      - name: Install Dependencies
+      - name: Install Python Libs
         run: pip install -r requirements.txt
 
-      - name: Run OCR Script
+      - name: Run Script
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: python main.py
 
-      - name: Save History
+      - name: Update History
         run: |
-          git config --global user.name "OCR Bot"
+          git config --global user.name "Fast Bot"
           git config --global user.email "bot@github.com"
           git add history.txt
-          git commit -m "Processed video with OCR" || echo "No changes"
+          git commit -m "Done" || echo "No changes"
           git push
