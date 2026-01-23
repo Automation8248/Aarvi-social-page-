@@ -3,6 +3,8 @@ import requests
 import sys
 import glob
 import re
+import random
+import time
 from deep_translator import GoogleTranslator
 
 # --- CONFIGURATION ---
@@ -12,8 +14,15 @@ TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 
-# RapidAPI Key
-RAPID_API_KEY = "1d87db308dmshd21171d762615b5p1368bejsnabb286989baf"
+# --- UPDATED WORKING SERVER LIST (2026) ---
+# Ye list abhi active servers ki hai
+COBALT_INSTANCES = [
+    "https://api.cobalt.tools",       # Official Main Server
+    "https://cobalt.arms.nu",         # Mirror 1
+    "https://cobalt.rudart.cm",       # Mirror 2
+    "https://cobalt.moscow.btn.moe",  # Mirror 3
+    "https://hyp.cobalt.tools",       # Mirror 4
+]
 
 SEO_TAGS = ["#reels", "#trending", "#viral", "#explore", "#love", "#shayari"]
 FORBIDDEN_WORDS = ["virtualaarvi", "aarvi", "video by", "uploaded by", "subscribe", "channel"]
@@ -52,114 +61,72 @@ def translate_and_shorten(text):
         return " ".join(words[:4])
     except: return None
 
-def extract_shortcode(url):
-    match = re.search(r'(?:reel|p)\/([a-zA-Z0-9_-]+)', url)
-    if match:
-        return match.group(1)
-    return None
-
-def generate_hashtags(original_tags):
-    final_tags = ["#aarvi"]
-    forbidden = ["virtualaarvi", "aarvi"]
-    if original_tags:
-        for tag in original_tags:
-            clean_tag = tag.replace(" ", "").lower()
-            if clean_tag not in forbidden and f"#{clean_tag}" not in final_tags:
-                final_tags.append(f"#{clean_tag}")
-    for seo in SEO_TAGS:
-        if len(final_tags) < 5:
-            if seo not in final_tags: final_tags.append(seo)
-        else: break
-    return " ".join(final_tags[:5])
-
 def download_video_data(url):
-    print(f"⬇️ Processing URL: {url}")
+    print(f"⬇️ Processing URL via Cobalt: {url}")
     
     for f in glob.glob("temp_video*"):
         try: os.remove(f)
         except: pass
 
-    shortcode = extract_shortcode(url)
-    if not shortcode:
-        print("❌ Error: Could not extract Video ID from URL.")
-        return None
-    
-    print(f"🔹 Detected Shortcode: {shortcode}")
-
-    # --- FIX: CORRECT API ENDPOINT ---
-    # We are using 'instagram-bulk-scraper-latest' style or 'instagram-downloader-download-instagram-videos-stories'
-    # Switching to a very standard rapidapi host that usually works with this key if subscribed.
-    # Since you used 'instagram120', let's try the /download endpoint which is common.
-    
-    # If 'instagram120' is failing, we will try the download endpoint directly.
-    # NOTE: The host must match what you are subscribed to.
-    # Assuming you are subscribed to 'instagram120' based on your previous message.
-    
-    rapid_url = "https://instagram-downloader-download-instagram-videos-stories.p.rapidapi.com/index"
-    querystring = {"url": url} # They usually take the full URL, not just code
-    
-    # If you are strictly using instagram120, their endpoint might be /media/info
-    # But since that failed, I am giving you a code that tries to use a more robust logic
-    # Make sure you are subscribed to 'Instagram Downloader' on RapidAPI if this fails, 
-    # BUT let's try to stick to your key.
-    
-    # Let's try the specific "instagram120" fixed endpoint:
-    rapid_url = "https://instagram120.p.rapidapi.com/media/info" # Changed from /api/instagram/post
-    
+    # --- COBALT API LOGIC ---
     headers = {
-        "x-rapidapi-key": RAPID_API_KEY,
-        "x-rapidapi-host": "instagram120.p.rapidapi.com"
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"
     }
     
-    # Note: Some APIs need 'shortcode' param, some need 'code'
-    querystring = {"code": shortcode}
+    payload = {
+        "url": url,
+        "vCodec": "h264",
+        "vQuality": "720",
+        "filenamePattern": "basic"
+    }
 
+    download_url = None
+    
+    # Randomize server order
+    random.shuffle(COBALT_INSTANCES)
+
+    for instance in COBALT_INSTANCES:
+        try:
+            # Correct Endpoint Structure
+            api_url = f"{instance}/api/json"
+            print(f"📡 Trying Server: {instance} ...")
+            
+            resp = requests.post(api_url, json=payload, headers=headers, timeout=15)
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                if 'url' in data:
+                    download_url = data['url']
+                    print("✅ Video Link Found!")
+                    break
+                elif 'status' in data and data['status'] == 'error':
+                    print(f"⚠️ API Error: {data.get('text')}")
+            else:
+                print(f"⚠️ Failed (Status: {resp.status_code})")
+                
+        except Exception as e:
+            print(f"⚠️ Connection Error: {str(e)[:50]}")
+            continue
+
+    if not download_url:
+        print("❌ All Cobalt servers failed. Instagram might be blocking them.")
+        return None
+
+    # Download the file
     try:
-        response = requests.get(rapid_url, headers=headers, params=querystring)
-        print(f"📡 API Response Status: {response.status_code}")
-        
-        if response.status_code != 200:
-            print(f"❌ API Error: {response.text}")
-            # Fallback: Try a different endpoint structure if first fails
-            print("🔄 Trying alternative endpoint...")
-            rapid_url_alt = "https://instagram120.p.rapidapi.com/post/info"
-            response = requests.get(rapid_url_alt, headers=headers, params=querystring)
-            if response.status_code != 200:
-                 return None
-        
-        res_data = response.json()
-        
-        # Adjusting for likely response structure
-        # Usually it's in 'items'[0] or direct keys
-        video_download_url = None
-        title = "Instagram Reel"
-        
-        # Flexible Parsing
-        if 'video_url' in res_data:
-            video_download_url = res_data['video_url']
-        elif 'items' in res_data and len(res_data['items']) > 0:
-            item = res_data['items'][0]
-            if 'video_versions' in item:
-                video_download_url = item['video_versions'][0]['url']
-            title = item.get('caption', {}).get('text', title)
-        elif 'data' in res_data:
-             if 'video_url' in res_data['data']:
-                 video_download_url = res_data['data']['video_url']
-             title = res_data['data'].get('caption', title)
-
-        if not video_download_url:
-            print(f"❌ Video URL not found in API response. Data keys: {res_data.keys()}")
-            return None
-
         print("📥 Downloading video file...")
-        video_res = requests.get(video_download_url, stream=True)
+        video_res = requests.get(download_url, stream=True)
         dl_filename = "temp_video.mp4"
         with open(dl_filename, 'wb') as f:
             for chunk in video_res.iter_content(chunk_size=1024):
                 if chunk: f.write(chunk)
         
-        hashtags = generate_hashtags([])
-        final_hindi_text = translate_and_shorten(title) or "देखिए आज का वीडियो"
+        # Generic Metadata (Since API doesn't allow scraping text easily without login)
+        title = "Instagram Reel"
+        hashtags = "#reels #trending #viral " + " ".join(SEO_TAGS[:2])
+        final_hindi_text = "देखिए आज का वीडियो ✨"
 
         return {
             "filename": dl_filename,
@@ -170,7 +137,7 @@ def download_video_data(url):
         }
 
     except Exception as e:
-        print(f"❌ Unexpected Error: {e}")
+        print(f"❌ File Download Error: {e}")
         return None
 
 def upload_to_catbox(filepath):
