@@ -1,165 +1,203 @@
 import os
 import requests
 import yt_dlp
-import cv2
-import pytesseract
-import time
-import random
+import sys
+import glob
+import re
+from deep_translator import GoogleTranslator
 
 # --- CONFIGURATION ---
-TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_TOKEN')
+VIDEO_LIST_FILE = 'videos.txt'
+HISTORY_FILE = 'history.txt'
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
 
-FILES_DIR = "downloads"
-LINKS_FILE = 'link.txt'
-HISTORY_FILE = 'history.txt'
-HASHTAGS = "\n#viral #trending #motivation #quotes #hindi #reels #explore"
+# RapidAPI Key (Isse GitHub Secrets mein add karna behtar hai)
+RAPID_API_KEY = "1d87db308dmshd21171d762615b5p1368bejsnabb286989baf"
 
-# --- BYPASS ENGINE (COBALT API) ---
-def get_bypass_link(insta_url):
-    """
-    Instagram Block Bypass karne ke liye Cobalt API ka use karta hai.
-    Ye direct MP4 link return karega.
-    """
-    api_url = "https://api.cobalt.tools/api/json"
+SEO_TAGS = ["#reels", "#trending", "#viral", "#explore", "#love", "#shayari"]
+FORBIDDEN_WORDS = ["virtualaarvi", "aarvi", "video by", "uploaded by", "subscribe", "channel"]
+
+def get_next_video():
+    processed_urls = []
+    if os.path.exists(HISTORY_FILE):
+        with open(HISTORY_FILE, 'r') as f:
+            processed_urls = [line.strip() for line in f.readlines()]
+
+    if not os.path.exists(VIDEO_LIST_FILE):
+        print("❌ Error: videos.txt missing!")
+        return None
+
+    with open(VIDEO_LIST_FILE, 'r') as f:
+        all_urls = [line.strip() for line in f.readlines() if line.strip()]
+
+    for url in all_urls:
+        if url not in processed_urls:
+            return url
+    return None
+
+def is_text_safe(text):
+    lower_text = text.lower()
+    for word in FORBIDDEN_WORDS:
+        if word in lower_text:
+            return False
+    return True
+
+def translate_and_shorten(text):
+    try:
+        if not text or not text.strip(): return None
+        translated = GoogleTranslator(source='auto', target='hi').translate(text)
+        if not is_text_safe(translated) or not is_text_safe(text): return None
+        words = translated.split()
+        return " ".join(words[:4])
+    except: return None
+
+def get_smart_caption_text(vtt_file_path, description, title):
+    if vtt_file_path and os.path.exists(vtt_file_path):
+        try:
+            with open(vtt_file_path, 'r', encoding='utf-8') as f: content = f.read()
+            lines = content.splitlines()
+            spoken_text = []
+            for line in lines:
+                if '-->' in line or line.strip() == '' or line.startswith('WEBVTT') or line.isdigit(): continue
+                clean = re.sub(r'<[^>]+>', '', line).strip()
+                clean = re.sub(r'\[.*?\]', '', clean)
+                if clean and clean not in spoken_text: spoken_text.append(clean)
+            
+            full_speech = " ".join(spoken_text[:3])
+            hindi_audio = translate_and_shorten(full_speech)
+            if hindi_audio: return hindi_audio
+        except Exception as e: print(f"⚠️ VTT Error: {e}")
+
+    if description:
+        clean_desc = description.split('\n')[0]
+        clean_desc = re.sub(r'#\w+', '', clean_desc).strip()
+        if is_text_safe(clean_desc):
+            hindi_desc = translate_and_shorten(clean_desc)
+            if hindi_desc: return hindi_desc
+
+    clean_title = re.sub(r'#\w+', '', title).strip()
+    if is_text_safe(clean_title):
+        hindi_title = translate_and_shorten(clean_title)
+        if hindi_title: return hindi_title
+
+    return "देखिए आज का वीडियो"
+
+def generate_hashtags(original_tags):
+    final_tags = ["#aarvi"]
+    forbidden = ["virtualaarvi", "aarvi"]
+    for tag in original_tags:
+        clean_tag = tag.replace(" ", "").lower()
+        if clean_tag not in forbidden and f"#{clean_tag}" not in final_tags:
+            final_tags.append(f"#{clean_tag}")
+    for seo in SEO_TAGS:
+        if len(final_tags) < 5:
+            if seo not in final_tags: final_tags.append(seo)
+        else: break
+    return " ".join(final_tags[:5])
+
+def download_video_data(url):
+    print(f"⬇️ Fetching via RapidAPI: {url}")
+    for f in glob.glob("temp_video*"):
+        try: os.remove(f)
+        except: pass
+
+    # --- RAPID API INTEGRATION ---
+    rapid_url = "https://instagram120.p.rapidapi.com/api/instagram/post" # Single post info endpoint
+    querystring = {"code": url.split("/")[-2]} # Link se shortcode nikalna
     
     headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "x-rapidapi-key": RAPID_API_KEY,
+        "x-rapidapi-host": "instagram120.p.rapidapi.com"
     }
 
-    data = {
-        "url": insta_url,
-        "vQuality": "720",
-        "filenamePattern": "basic"
-    }
-
-    print("🛡️ Bypassing Instagram Security...")
     try:
-        response = requests.post(api_url, json=data, headers=headers, timeout=15)
-        response_data = response.json()
-
-        if response_data.get('status') == 'stream':
-            return response_data.get('url')
-        elif response_data.get('status') == 'redirect':
-            return response_data.get('url')
-        elif response_data.get('status') == 'picker':
-            # Agar multiple items hain (Carousel), to pehla video uthao
-            return response_data['picker'][0]['url']
-        else:
-            print(f"❌ Bypass API Error: {response_data}")
+        response = requests.get(rapid_url, headers=headers, params=querystring)
+        res_data = response.json()
+        
+        # RapidAPI se video link aur info nikalna
+        video_download_url = res_data.get('result', {}).get('video_url')
+        title = res_data.get('result', {}).get('caption_text', 'Instagram Video')
+        
+        if not video_download_url:
+            print("❌ RapidAPI could not find video URL")
             return None
+
+        # Video download karna
+        print("📥 Downloading file...")
+        video_res = requests.get(video_download_url, stream=True)
+        dl_filename = "temp_video.mp4"
+        with open(dl_filename, 'wb') as f:
+            for chunk in video_res.iter_content(chunk_size=1024):
+                if chunk: f.write(chunk)
+        
+        hashtags = generate_hashtags([])
+        final_hindi_text = translate_and_shorten(title) or "देखिए आज का वीडियो"
+
+        return {
+            "filename": dl_filename,
+            "title": title,
+            "hindi_text": final_hindi_text,
+            "hashtags": hashtags,
+            "original_url": url
+        }
+
     except Exception as e:
-        print(f"❌ Bypass Failed: {e}")
+        print(f"❌ RapidAPI Error: {e}")
         return None
 
-# --- OCR LOGIC ---
-def get_visual_caption(video_path):
-    print("👁️ Scanning video text...")
+def upload_to_catbox(filepath):
+    print("🚀 Uploading to Catbox...")
     try:
-        cap = cv2.VideoCapture(video_path)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        if total_frames == 0: return "New Reel..."
-
-        # 20% point par frame capture
-        cap.set(cv2.CAP_PROP_POS_FRAMES, int(total_frames * 0.20))
-        ret, frame = cap.read()
-        cap.release()
-
-        if not ret: return "Reel Video..."
-
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        text = pytesseract.image_to_string(gray, lang='eng') # English script se Hindi padhne ki koshish (fast)
-        
-        words = text.split()
-        if len(words) >= 3:
-            return f"{words[0]} {words[1]} {words[2]}..."
-        elif len(words) > 0:
-            return " ".join(words) + "..."
-        else:
-            return "Must Watch..."
-            
-    except:
-        return "Trending Reel..."
-
-# --- DOWNLOAD LOGIC ---
-def download_video_file(direct_url):
-    if not os.path.exists(FILES_DIR): os.makedirs(FILES_DIR)
-    
-    filename = f"{FILES_DIR}/video_{int(time.time())}.mp4"
-    
-    try:
-        print("⬇️ Downloading Video File...")
-        with requests.get(direct_url, stream=True) as r:
-            r.raise_for_status()
-            with open(filename, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
-        return filename
-    except Exception as e:
-        print(f"❌ Download Error: {e}")
-        return None
-
-# --- SEND LOGIC ---
-def send_to_telegram(file_path, caption):
-    if not TELEGRAM_BOT_TOKEN: return
-    
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
-    formatted_caption = f"{caption}\n.\n.\n.\n.\n.{HASHTAGS}"
-    
-    print("🚀 Sending to Telegram...")
-    try:
-        with open(file_path, 'rb') as f:
-            requests.post(url, 
-                files={'video': f}, 
-                data={'chat_id': TELEGRAM_CHAT_ID, 'caption': formatted_caption}
-            )
-            print("✅ Sent Successfully!")
-    except Exception as e:
-        print(f"❌ Send Error: {e}")
-
-def main():
-    if not os.path.exists(HISTORY_FILE): open(HISTORY_FILE, 'w').close()
-    with open(HISTORY_FILE, 'r') as f: history = f.read().splitlines()
-    
-    if not os.path.exists(LINKS_FILE): 
-        print("Link file missing")
-        return
-        
-    with open(LINKS_FILE, 'r') as f: links = [l.strip() for l in f if l.strip()]
-
-    if not links:
-        print("No links found.")
-        return
-
-    for link in links:
-        if link in history: 
-            print(f"Skipping: {link}")
-            continue
-        
-        print(f"Processing Insta Link: {link}")
-        
-        # STEP 1: Get Bypass Link (Direct MP4)
-        mp4_url = get_bypass_link(link)
-        
-        if mp4_url:
-            # STEP 2: Download
-            file_path = download_video_file(mp4_url)
-            
-            if file_path:
-                # STEP 3: OCR & Send
-                caption = get_visual_caption(file_path)
-                send_to_telegram(file_path, caption)
-                
-                # History Update
-                with open(HISTORY_FILE, 'a') as f: f.write(link + '\n')
-                os.remove(file_path)
+        with open(filepath, "rb") as f:
+            response = requests.post("https://catbox.moe/user/api.php", data={"reqtype": "fileupload"}, files={"fileToUpload": f})
+            if response.status_code == 200:
+                return response.text.strip()
             else:
-                print("Download failed.")
-        else:
-            print("❌ Could not bypass Instagram block.")
+                return None
+    except: return None
+
+def send_notifications(video_data, catbox_url):
+    print("\n--- Sending Notifications ---")
+    tg_caption = f"{video_data['hindi_text']}\n.\n.\n.\n.\n.\n{video_data['hashtags']}"
+    
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+        print("📤 Telegram Video Sending...")
+        tg_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
+        try:
+            with open(video_data['filename'], 'rb') as video_file:
+                payload = {"chat_id": str(TELEGRAM_CHAT_ID), "caption": tg_caption, "parse_mode": "Markdown"}
+                files = {'video': video_file}
+                requests.post(tg_url, data=payload, files=files)
+                print("✅ Telegram Sent!")
+        except Exception as e: print(f"❌ Telegram Error: {e}")
+
+    if WEBHOOK_URL:
+        if catbox_url and "catbox.moe" in catbox_url:
+            print(f"📤 Webhook Sending (Link: {catbox_url})...")
+            payload = {
+                "content": tg_caption, 
+                "video_url": catbox_url,
+                "title_original": video_data['title']
+            }
+            try: requests.post(WEBHOOK_URL, json=payload)
+            except: pass
+
+def update_history(url):
+    with open(HISTORY_FILE, 'a') as f: f.write(url + '\n')
 
 if __name__ == "__main__":
-    main()
+    next_url = get_next_video()
+    if not next_url:
+        print("💤 No new videos.")
+        sys.exit(0)
+    
+    data = download_video_data(next_url)
+    if data and data['filename']:
+        catbox_link = upload_to_catbox(data['filename'])
+        send_notifications(data, catbox_link)
+        update_history(next_url)
+        if os.path.exists(data['filename']): os.remove(data['filename'])
+        print("✅ Task Done.")
+    else: sys.exit(1)
