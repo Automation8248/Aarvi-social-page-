@@ -1,4 +1,4 @@
-name: Fast OCR Bot
+name: Insta Bypass Bot
 
 on:
   push:
@@ -9,27 +9,26 @@ on:
     - cron: '0 0 * * *'
 
 jobs:
-  run-fast-bot:
+  run-bypass-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 2  # Safety cutoff
+    timeout-minutes: 2
     permissions:
       contents: write
 
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-          cache: 'pip' # Dependencies ko cache karega taki agli baar aur fast ho
+          cache: 'pip'
 
-      # System Libraries (Tesseract is faster than installing PyTorch)
-      - name: Install System Libs
+      - name: Install Tesseract
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg tesseract-ocr libtesseract-dev
+          sudo apt-get update -qq
+          sudo apt-get install -y tesseract-ocr libtesseract-dev
 
       - name: Install Python Libs
         run: pip install -r requirements.txt
@@ -43,8 +42,8 @@ jobs:
 
       - name: Update History
         run: |
-          git config --global user.name "Fast Bot"
+          git config --global user.name "Bypass Bot"
           git config --global user.email "bot@github.com"
           git add history.txt
-          git commit -m "Done" || echo "No changes"
+          git commit -m "Processed Reel" || echo "No changes"
           git push
