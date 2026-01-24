@@ -1,7 +1,7 @@
 import os
 import requests
 import shutil
-import yt_dlp
+import time
 
 # Configurations
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_TOKEN"]
@@ -11,15 +11,16 @@ WEBHOOK_URL = os.environ["WEBHOOK_URL"]
 LINKS_FILE = "links.txt"
 HISTORY_FILE = "history.txt"
 
+# Cobalt API Instance (Ye video download handle karega)
+COBALT_API_URL = "https://api.cobalt.tools/api/json"
+
 def get_next_link():
-    # History check
     if os.path.exists(HISTORY_FILE):
         with open(HISTORY_FILE, "r") as f:
             history = set(line.strip() for line in f)
     else:
         history = set()
 
-    # Pehla naya link dhundna
     with open(LINKS_FILE, "r") as f:
         for line in f:
             link = line.strip()
@@ -27,56 +28,62 @@ def get_next_link():
                 return link
     return None
 
-def download_video(link):
-    print(f"Downloading with yt-dlp: {link}")
+def download_via_cobalt(link):
+    print(f"Requesting Cobalt API for: {link}")
     
-    # Downloads folder ensure karein
-    if not os.path.exists("downloads"):
-        os.makedirs("downloads")
-
-    # yt-dlp configuration
-    ydl_opts = {
-        'outtmpl': 'downloads/video.%(ext)s',  # File ka naam fix rakhenge processing ke liye
-        'format': 'best[ext=mp4]',             # Hamesha MP4 download kare
-        'quiet': True,
-        'no_warnings': True,
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
     }
     
+    payload = {
+        "url": link,
+        "vCodec": "h264",
+        "vQuality": "720",
+        "filenamePattern": "basic"
+    }
+
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Video info extract karein (Caption ke liye)
-            info = ydl.extract_info(link, download=True)
-            caption = info.get('description', 'No Caption')
+        response = requests.post(COBALT_API_URL, json=payload, headers=headers)
+        data = response.json()
+        
+        if "url" in data:
+            video_url = data["url"]
+            print("Video URL found via Cobalt.")
             
-            # File path verify karein
-            video_path = os.path.join("downloads", "video.mp4")
+            # Ab video ko download karte hain
+            if not os.path.exists("downloads"):
+                os.makedirs("downloads")
             
-            if os.path.exists(video_path):
-                return video_path, caption
-            else:
-                return None, None
+            video_path = "downloads/video.mp4"
+            
+            # Stream download to avoid memory issues
+            with requests.get(video_url, stream=True) as r:
+                r.raise_for_status()
+                with open(video_path, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+            
+            return video_path
+        else:
+            print(f"Cobalt API Error: {data}")
+            return None
+            
     except Exception as e:
-        print(f"yt-dlp Error: {e}")
-        return None, None
+        print(f"Error connecting to Cobalt: {e}")
+        return None
 
 def upload_to_catbox(file_path):
     print("Uploading to Catbox.moe...")
     url = "https://catbox.moe/user/api.php"
     try:
         with open(file_path, "rb") as f:
-            payload = {
-                "reqtype": "fileupload",
-                "userhash": "" 
-            }
-            files = {
-                "fileToUpload": f
-            }
+            payload = {"reqtype": "fileupload"}
+            files = {"fileToUpload": f}
             response = requests.post(url, data=payload, files=files)
             
             if response.status_code == 200:
-                catbox_url = response.text.strip()
-                print(f"Uploaded Successfully: {catbox_url}")
-                return catbox_url
+                return response.text.strip()
             else:
                 print(f"Catbox Error: {response.text}")
                 return None
@@ -95,10 +102,9 @@ def post_to_telegram(catbox_link, caption):
 
 def trigger_webhook(original_link, catbox_link, caption):
     data = {
-        "original_instagram_link": original_link,
-        "video_direct_url": catbox_link,
-        "caption": caption,
-        "status": "processed"
+        "original_link": original_link,
+        "catbox_url": catbox_link,
+        "caption": caption
     }
     requests.post(WEBHOOK_URL, json=data)
 
@@ -110,6 +116,39 @@ if __name__ == "__main__":
     link = get_next_link()
     
     if link:
+        print(f"Processing: {link}")
+        
+        # Note: IP blocks ki wajah se caption extract karna mushkil hai.
+        # Hum generic caption use karenge ya user manual link mein provide kar sakta hai.
+        caption = f"New Reel! 🔥\n\nSource: {link}"
+        
+        # 1. Download via API (Bypasses IP Block)
+        video_path = download_via_cobalt(link)
+        
+        if video_path:
+            # 2. Upload to Catbox
+            catbox_url = upload_to_catbox(video_path)
+            
+            if catbox_url:
+                print(f"Catbox Link: {catbox_url}")
+                
+                # 3. Post to Telegram
+                post_to_telegram(catbox_url, caption)
+                
+                # 4. Webhook
+                trigger_webhook(link, catbox_url, caption)
+                
+                # 5. Save History
+                update_history(link)
+                
+                # Cleanup
+                shutil.rmtree("downloads")
+            else:
+                print("Failed to upload to Catbox.")
+        else:
+            print("Failed to download video via API.")
+    else:
+        print("No new links found.")    if link:
         print(f"Processing: {link}")
         
         # 1. Download
