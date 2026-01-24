@@ -1,7 +1,7 @@
 import os
-import instaloader
 import requests
 import shutil
+import yt_dlp
 
 # Configurations
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_TOKEN"]
@@ -12,7 +12,7 @@ LINKS_FILE = "links.txt"
 HISTORY_FILE = "history.txt"
 
 def get_next_link():
-    # History check karna
+    # History check
     if os.path.exists(HISTORY_FILE):
         with open(HISTORY_FILE, "r") as f:
             history = set(line.strip() for line in f)
@@ -28,29 +28,36 @@ def get_next_link():
     return None
 
 def download_video(link):
-    print("Downloading from Instagram...")
-    L = instaloader.Instaloader()
+    print(f"Downloading with yt-dlp: {link}")
+    
+    # Downloads folder ensure karein
+    if not os.path.exists("downloads"):
+        os.makedirs("downloads")
+
+    # yt-dlp configuration
+    ydl_opts = {
+        'outtmpl': 'downloads/video.%(ext)s',  # File ka naam fix rakhenge processing ke liye
+        'format': 'best[ext=mp4]',             # Hamesha MP4 download kare
+        'quiet': True,
+        'no_warnings': True,
+    }
+    
     try:
-        shortcode = link.split("/")[-2]
-        post = instaloader.Post.from_shortcode(L.context, shortcode)
-    except Exception as e:
-        print(f"Error fetching post metadata: {e}")
-        return None, None, None
-    
-    target_dir = "downloads"
-    # Download
-    L.download_post(post, target=target_dir)
-    
-    video_path = None
-    caption = post.caption if post.caption else "No Caption"
-    
-    # Folder mein mp4 file dhundna
-    for file in os.listdir(target_dir):
-        if file.endswith(".mp4"):
-            video_path = os.path.join(target_dir, file)
-            break
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            # Video info extract karein (Caption ke liye)
+            info = ydl.extract_info(link, download=True)
+            caption = info.get('description', 'No Caption')
             
-    return video_path, caption, shortcode
+            # File path verify karein
+            video_path = os.path.join("downloads", "video.mp4")
+            
+            if os.path.exists(video_path):
+                return video_path, caption
+            else:
+                return None, None
+    except Exception as e:
+        print(f"yt-dlp Error: {e}")
+        return None, None
 
 def upload_to_catbox(file_path):
     print("Uploading to Catbox.moe...")
@@ -59,7 +66,7 @@ def upload_to_catbox(file_path):
         with open(file_path, "rb") as f:
             payload = {
                 "reqtype": "fileupload",
-                "userhash": "" # Optional: Agar account hai to yahan hash dalein
+                "userhash": "" 
             }
             files = {
                 "fileToUpload": f
@@ -78,7 +85,6 @@ def upload_to_catbox(file_path):
         return None
 
 def post_to_telegram(catbox_link, caption):
-    # Telegram URL method se video bhejega (fast)
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
     payload = {
         'chat_id': TELEGRAM_CHAT_ID, 
@@ -94,7 +100,6 @@ def trigger_webhook(original_link, catbox_link, caption):
         "caption": caption,
         "status": "processed"
     }
-    # Webhook par JSON data bhejna
     requests.post(WEBHOOK_URL, json=data)
 
 def update_history(link):
@@ -107,31 +112,31 @@ if __name__ == "__main__":
     if link:
         print(f"Processing: {link}")
         
-        # 1. Download Video
-        video_path, caption, shortcode = download_video(link)
+        # 1. Download
+        video_path, caption = download_video(link)
         
         if video_path:
             # 2. Upload to Catbox
             catbox_url = upload_to_catbox(video_path)
             
             if catbox_url:
-                print("Posting to Telegram via Catbox Link...")
-                # 3. Post to Telegram
+                print("Posting to Telegram...")
+                # 3. Post
                 post_to_telegram(catbox_url, caption)
                 
                 print("Triggering Webhook...")
-                # 4. Webhook Trigger
+                # 4. Webhook
                 trigger_webhook(link, catbox_url, caption)
                 
                 print("Updating History...")
                 update_history(link)
             else:
-                print("Catbox upload failed. Skipping post.")
+                print("Catbox upload failed.")
             
             # Cleanup
             if os.path.exists("downloads"):
                 shutil.rmtree("downloads")
         else:
-            print("Video download failed or file not found.")
+            print("Video download failed.")
     else:
         print("No new links to process today.")
