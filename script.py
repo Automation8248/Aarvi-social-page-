@@ -11,7 +11,7 @@ WEBHOOK_URL = os.environ["WEBHOOK_URL"]
 LINKS_FILE = "links.txt"
 HISTORY_FILE = "history.txt"
 
-# Cobalt API Instance (Ye video download handle karega)
+# Cobalt API Instance
 COBALT_API_URL = "https://api.cobalt.tools/api/json"
 
 def get_next_link():
@@ -51,13 +51,11 @@ def download_via_cobalt(link):
             video_url = data["url"]
             print("Video URL found via Cobalt.")
             
-            # Ab video ko download karte hain
             if not os.path.exists("downloads"):
                 os.makedirs("downloads")
             
             video_path = "downloads/video.mp4"
             
-            # Stream download to avoid memory issues
             with requests.get(video_url, stream=True) as r:
                 r.raise_for_status()
                 with open(video_path, 'wb') as f:
@@ -118,64 +116,22 @@ if __name__ == "__main__":
     if link:
         print(f"Processing: {link}")
         
-        # Note: IP blocks ki wajah se caption extract karna mushkil hai.
-        # Hum generic caption use karenge ya user manual link mein provide kar sakta hai.
         caption = f"New Reel! 🔥\n\nSource: {link}"
         
-        # 1. Download via API (Bypasses IP Block)
         video_path = download_via_cobalt(link)
         
         if video_path:
-            # 2. Upload to Catbox
             catbox_url = upload_to_catbox(video_path)
             
             if catbox_url:
                 print(f"Catbox Link: {catbox_url}")
-                
-                # 3. Post to Telegram
                 post_to_telegram(catbox_url, caption)
-                
-                # 4. Webhook
                 trigger_webhook(link, catbox_url, caption)
-                
-                # 5. Save History
                 update_history(link)
-                
-                # Cleanup
                 shutil.rmtree("downloads")
             else:
                 print("Failed to upload to Catbox.")
         else:
             print("Failed to download video via API.")
     else:
-        print("No new links found.")    if link:
-        print(f"Processing: {link}")
-        
-        # 1. Download
-        video_path, caption = download_video(link)
-        
-        if video_path:
-            # 2. Upload to Catbox
-            catbox_url = upload_to_catbox(video_path)
-            
-            if catbox_url:
-                print("Posting to Telegram...")
-                # 3. Post
-                post_to_telegram(catbox_url, caption)
-                
-                print("Triggering Webhook...")
-                # 4. Webhook
-                trigger_webhook(link, catbox_url, caption)
-                
-                print("Updating History...")
-                update_history(link)
-            else:
-                print("Catbox upload failed.")
-            
-            # Cleanup
-            if os.path.exists("downloads"):
-                shutil.rmtree("downloads")
-        else:
-            print("Video download failed.")
-    else:
-        print("No new links to process today.")
+        print("No new links found.")
