@@ -32,78 +32,98 @@ def get_next_link():
         if link not in history: return link
     return None
 
-def download_via_saveclip(insta_link):
-    print("🕵️ Launching Browser (Target: SaveClip.app)...")
+def download_via_sssinstagram(insta_link):
+    print("🕵️ Launching Browser (Target: SSSInstagram)...")
     
     options = uc.ChromeOptions()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
-    # User Agent taaki bot na lage
-    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
+    # User Agent lagana zaroori hai
+    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
     driver = uc.Chrome(options=options, version_main=None)
     video_path = "final_video.mp4"
     
     try:
-        print("🌍 Opening SaveClip.app...")
-        driver.get("https://saveclip.app/en")
+        print("🌍 Opening sssinstagram.com...")
+        driver.get("https://sssinstagram.com/en")
         random_sleep(3, 5)
 
         print("✍️ Pasting Link...")
-        # SaveClip ka input box dhundo
+        # SSSInstagram ka Input Box ID 'main_page_text' hota hai usually
         try:
-            input_box = driver.find_element(By.ID, "url")
+            input_box = driver.find_element(By.ID, "main_page_text")
         except:
-            # Fallback agar ID change ho
+            # Fallback agar ID change ho jaye
             input_box = driver.find_element(By.CSS_SELECTOR, "input[placeholder*='Paste']")
             
         input_box.click()
         input_box.send_keys(insta_link)
-        random_sleep(1, 3)
+        random_sleep(1, 2)
 
         print("🖱️ Clicking Download...")
-        # Input box mein Enter marna sabse safe hota hai
-        input_box.send_keys(Keys.ENTER)
+        # Button ID 'submit' hota hai
+        try:
+            submit_btn = driver.find_element(By.ID, "submit")
+            driver.execute_script("arguments[0].click();", submit_btn)
+        except:
+            input_box.send_keys(Keys.ENTER)
 
-        # Processing Wait
-        random_sleep(5, 8) 
+        print("⏳ Waiting 5 seconds for result...")
+        time.sleep(5) # User request: 3-5 sec wait
 
-        # Ad Popup Handling
+        # Ad Popup Handling (Agar click karne par naya tab khule)
         if len(driver.window_handles) > 1:
             driver.switch_to.window(driver.window_handles[1])
             driver.close()
             driver.switch_to.window(driver.window_handles[0])
 
-        print("📥 Finding Final Video Link...")
-        # SaveClip par download button 'is-success' class ke sath aata hai
-        try:
-            download_btn = WebDriverWait(driver, 20).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "a.button.is-success"))
-            )
-            video_url = download_btn.get_attribute("href")
-        except:
-            # Fallback strategy
-            print("⚠️ Standard button not found, searching specifically for mp4 links...")
-            links = driver.find_elements(By.TAG_NAME, "a")
-            video_url = None
-            for l in links:
-                href = l.get_attribute("href")
-                if href and "download" in href: # SaveClip urls often have 'download' keyword
-                    video_url = href
-                    break
+        print("📥 Finding Download Button...")
         
-        if not video_url: raise Exception("Video URL nahi mila")
+        video_url = None
+        
+        # SSSInstagram par result "download_link" class wale buttons mein aata hai
+        try:
+            # Wait for download links to appear
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "a.download_link, a.btn-success"))
+            )
+            
+            # Find all download buttons
+            buttons = driver.find_elements(By.TAG_NAME, "a")
+            
+            for btn in buttons:
+                text = btn.text.lower()
+                href = btn.get_attribute("href")
+                
+                # Logic: Link hona chahiye, 'sssinstagram' domain nahi hona chahiye (direct CDN link), aur text mein 'download' ho
+                if href and "http" in href and "sssinstagram.com" not in href:
+                    if "download" in text or "mp4" in text:
+                        video_url = href
+                        break
+        except Exception as e:
+            print(f"⚠️ Button search warning: {e}")
 
-        print(f"✅ URL Found: {video_url[:30]}...")
+        if not video_url: 
+            print("❌ Valid Video URL nahi mila. Page dump check kar raha hun...")
+            raise Exception("Video URL Not Found")
 
-        # Download
+        print(f"✅ Real Video URL Found: {video_url[:40]}...")
+
+        # Download Logic
+        print("💾 Downloading file...")
         r = requests.get(video_url, stream=True)
         with open(video_path, 'wb') as f:
             for chunk in r.iter_content(chunk_size=1024):
                 f.write(chunk)
         
+        # SAFETY CHECK: File size check (Agar 50KB se kam hai to wo video nahi HTML page hai)
+        file_size = os.path.getsize(video_path)
+        if file_size < 50000: 
+            raise Exception(f"File too small ({file_size} bytes). Download failed.")
+            
         return video_path
 
     except Exception as e:
@@ -120,7 +140,11 @@ def upload_to_catbox(file_path):
             r = requests.post("https://catbox.moe/user/api.php", 
                             data={"reqtype": "fileupload"}, 
                             files={"fileToUpload": f})
-            if r.status_code == 200: return r.text.strip()
+            if r.status_code == 200: 
+                return r.text.strip()
+            else:
+                print(f"Catbox Error: {r.text}")
+                return None
     except Exception as e:
         print(f"Upload Error: {e}")
     return None
@@ -140,7 +164,8 @@ if __name__ == "__main__":
     link = get_next_link()
     if link:
         print(f"🎯 Processing: {link}")
-        video_file = download_via_saveclip(link)
+        # Function name updated to use SSSInstagram
+        video_file = download_via_sssinstagram(link)
         
         if video_file and os.path.exists(video_file):
             catbox_link = upload_to_catbox(video_file)
