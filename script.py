@@ -32,29 +32,76 @@ def get_next_link():
         if link not in history: return link
     return None
 
-def download_via_snapinsta(insta_link):
-    print("🕵️ Launching Browser (Target: SnapInsta)...")
+def handle_popup_ads(driver):
+    """
+    SPECIAL FUNCTION: Black Close Button aur Ads ko band karne ke liye
+    """
+    print("🛡️ Checking for Popups/Ads...")
+    time.sleep(2) # Ad load hone ka wait
+    
+    # 1. Agar naya Tab khula hai to band karo
+    if len(driver.window_handles) > 1:
+        print("🚫 Ad Tab Detected! Closing...")
+        driver.switch_to.window(driver.window_handles[1])
+        driver.close()
+        driver.switch_to.window(driver.window_handles[0])
+        return
+
+    # 2. Page ke andar wala Pop-up (Black Close Button)
+    try:
+        # Common selectors for 'X' or Close buttons on Ad networks
+        close_selectors = [
+            "div[aria-label='Close']",       # Google Ads
+            "span[class*='close']",          # Generic
+            "div[id*='close']",              # Generic ID
+            ".bs-modal-close",               # Bootstrap Modals
+            "svg[data-icon='times']",        # FontAwesome X
+            "div.ad-close-button",           # Custom Ad Close
+            "//button[contains(text(), 'Close')]",
+            "//div[text()='×']"              # Simple X text
+        ]
+        
+        for selector in close_selectors:
+            try:
+                if "//" in selector: # XPath
+                    btn = driver.find_element(By.XPATH, selector)
+                else: # CSS
+                    btn = driver.find_element(By.CSS_SELECTOR, selector)
+                
+                if btn.is_displayed():
+                    print(f"❎ Found Ad Close Button ({selector}). Clicking...")
+                    driver.execute_script("arguments[0].click();", btn)
+                    time.sleep(1)
+                    break # Ek mil gaya to loop roko
+            except:
+                continue
+    except Exception as e:
+        print(f"⚠️ Ad check skipped: {e}")
+
+def download_via_sssinstagram(insta_link):
+    print("🕵️ Launching Browser (Target: SSSInstagram)...")
     
     options = uc.ChromeOptions()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
+    # User Agent Rotation (Security)
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
     driver = uc.Chrome(options=options, version_main=None)
     video_path = "final_video.mp4"
     
     try:
-        print("🌍 Opening SnapInsta.app...")
-        driver.get("https://snapinsta.app/")
+        print("🌍 Opening SSSInstagram...")
+        driver.get("https://sssinstagram.com/")
         random_sleep(3, 5)
 
         print("✍️ Pasting Link...")
         try:
-            input_box = driver.find_element(By.ID, "url")
+            input_box = driver.find_element(By.ID, "main_page_text")
         except:
-            input_box = driver.find_element(By.NAME, "url")
+            input_box = driver.find_element(By.CSS_SELECTOR, "input[type='text']")
             
         input_box.click()
         input_box.send_keys(insta_link)
@@ -62,71 +109,63 @@ def download_via_snapinsta(insta_link):
 
         print("🖱️ Clicking Download...")
         try:
-            # SnapInsta button
-            btn = driver.find_element(By.CLASS_NAME, "btn-get-content")
-            driver.execute_script("arguments[0].click();", btn)
+            submit_btn = driver.find_element(By.ID, "submit")
+            driver.execute_script("arguments[0].click();", submit_btn)
         except:
             input_box.send_keys(Keys.ENTER)
 
-        print("⏳ Waiting 10-15 seconds for processing...")
-        # Processing time badha diya hai taaki fail na ho
-        time.sleep(12) 
+        print("⏳ Waiting for Result & Ads...")
+        time.sleep(5) 
 
-        # Ad Popup Handling (Important for SnapInsta)
-        if len(driver.window_handles) > 1:
-            print("🚫 Closing Ad Tab...")
-            driver.switch_to.window(driver.window_handles[1])
-            driver.close()
-            driver.switch_to.window(driver.window_handles[0])
+        # --- STEP 1: HANDLE AD POPUPS ---
+        handle_popup_ads(driver)
 
-        print("📥 Finding Real Video Link...")
+        # --- STEP 2: FIND REAL DOWNLOAD BUTTON ---
+        print("📥 Searching for Content...")
         video_url = None
         
-        # SMART FINDER LOGIC:
-        # 1. Try Specific Download Button
         try:
-            download_btn = driver.find_element(By.XPATH, "//a[contains(@href, 'googlevideo') or contains(@href, 'cdninstagram')]")
-            video_url = download_btn.get_attribute("href")
-        except:
-            pass
-
-        # 2. If failed, scan ALL links on page
-        if not video_url:
-            print("⚠️ Direct button not found, scanning all links...")
-            links = driver.find_elements(By.TAG_NAME, "a")
-            for l in links:
-                href = l.get_attribute("href")
-                if href and ("googlevideo" in href or "snapinsta" in href):
-                    # Ignore generic page links
-                    if "download.php" in href or "facebook.com" in href: continue
+            # SSSInstagram par content load hone ka wait
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "download_link"))
+            )
+            
+            # Button click karne par kabhi-kabhi phir ad khulta hai, isliye safe click karenge
+            buttons = driver.find_elements(By.CLASS_NAME, "download_link")
+            for btn in buttons:
+                href = btn.get_attribute("href")
+                text = btn.text.lower()
+                
+                # Filter: Link valid ho aur 'download' text ho
+                if href and "http" in href and "download" in text:
+                    print(f"✅ Found Button: {text}")
                     video_url = href
                     break
+                    
+        except Exception as e:
+            print("⚠️ Button not found via Class, trying fallback...")
 
-        if not video_url: 
-            print("❌ Valid Video URL nahi mila. Page HTML dump check kar raha hun...")
-            # Debugging: Print page source snippet
-            print(driver.page_source[:500])
-            raise Exception("Video URL Not Found")
+        if not video_url:
+            print("❌ Video URL fetch failed.")
+            raise Exception("No URL Found")
 
-        print(f"✅ Real Video URL Found: {video_url[:40]}...")
+        print(f"🔗 Real Video Link: {video_url[:40]}...")
 
         # Download
-        print("💾 Downloading file...")
         r = requests.get(video_url, stream=True)
         with open(video_path, 'wb') as f:
             for chunk in r.iter_content(chunk_size=1024):
                 f.write(chunk)
         
-        # FILE SIZE CHECK
-        file_size = os.path.getsize(video_path)
-        if file_size < 100000: # < 100KB means error page
-            raise Exception(f"File too small ({file_size} bytes). Download failed.")
-            
+        # Security Check: File Size
+        if os.path.getsize(video_path) < 50000:
+             raise Exception("Downloaded file is too small (Ad page).")
+
         return video_path
 
     except Exception as e:
         print(f"❌ Browser Error: {e}")
-        driver.save_screenshot("error_screenshot.png")
+        driver.save_screenshot("error_debug.png")
         return None
     finally:
         driver.quit()
@@ -140,9 +179,6 @@ def upload_to_catbox(file_path):
                             files={"fileToUpload": f})
             if r.status_code == 200: 
                 return r.text.strip()
-            else:
-                print(f"Catbox Error: {r.text}")
-                return None
     except Exception as e:
         print(f"Upload Error: {e}")
     return None
@@ -162,7 +198,7 @@ if __name__ == "__main__":
     link = get_next_link()
     if link:
         print(f"🎯 Processing: {link}")
-        video_file = download_via_snapinsta(link)
+        video_file = download_via_sssinstagram(link)
         
         if video_file and os.path.exists(video_file):
             catbox_link = upload_to_catbox(video_file)
