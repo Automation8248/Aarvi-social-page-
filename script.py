@@ -7,7 +7,7 @@ import time
 import random
 import os
 import requests
-import re  # New Library for removing hashtags
+import re
 
 # --- CONFIGURATION ---
 LINKS_FILE = "links.txt"
@@ -16,8 +16,8 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-# --- SEO HASHTAGS (Ye purane hashtags ki jagah lagenge) ---
-SEO_HASHTAGS = "\n\n#trending #viral #instagram #reels #explore #love #instagood #fashion #reelitfeelit #fyp #india #motivation"
+# --- SEO HASHTAGS ---
+SEO_HASHTAGS = "#trending #viral #instagram #reels #explore #love #instagood #fashion #reelitfeelit #fyp #india #motivation"
 
 def random_sleep(min_t=2, max_t=4):
     time.sleep(random.uniform(min_t, max_t))
@@ -44,18 +44,11 @@ def check_and_close_ads(driver):
         driver.switch_to.window(driver.window_handles[0])
 
 def clean_caption(raw_text):
-    """
-    Logic: Caption me se purane #hashtags hatao aur saaf text return karo
-    """
-    if not raw_text: return "New Video"
-    
-    # 1. Remove words starting with # (Hashtags)
+    if not raw_text: return "New Reel"
+    # Remove old hashtags
     clean_text = re.sub(r'#\w+', '', raw_text)
-    
-    # 2. Remove extra spaces and newlines
-    clean_text = clean_text.strip()
-    
-    return clean_text
+    # Remove extra whitespace
+    return clean_text.strip()
 
 def download_via_sssinstagram(insta_link):
     print("🕵️ Launching Browser (Target: SSSInstagram)...")
@@ -96,7 +89,6 @@ def download_via_sssinstagram(insta_link):
         check_and_close_ads(driver)
         print("⏳ Waiting for Result...")
         
-        # Wait for download button
         try:
             download_btn = WebDriverWait(driver, 15).until(
                 EC.presence_of_element_located((By.CLASS_NAME, "download_link"))
@@ -110,33 +102,24 @@ def download_via_sssinstagram(insta_link):
         print("📥 Extracting Info...")
         video_url = download_btn.get_attribute("href")
         
-        # --- CAPTION EXTRACTION & CLEANING ---
+        # Caption Logic
         try:
-            # SSSInstagram par caption <p> tag mein hota hai result box mein
             p_tags = driver.find_elements(By.XPATH, "//div[contains(@class, 'result')]//p")
-            
             raw_caption = ""
             for p in p_tags:
                 text = p.text
-                # Ignore button text like 'Download'
                 if len(text) > 5 and "Download" not in text:
                     raw_caption = text
                     break
             
             if raw_caption:
-                print(f"📝 Original Caption: {raw_caption[:30]}...")
-                # Function call to remove old hashtags
                 processed_caption = clean_caption(raw_caption)
-                print(f"✨ Cleaned Caption: {processed_caption[:30]}...")
-            else:
-                print("⚠️ No Caption found in text.")
-
-        except Exception as e:
-            print(f"⚠️ Caption Logic Error: {e}")
+        except:
+            pass
 
         if not video_url: raise Exception("Video URL Not Found")
 
-        print(f"🔗 Video Link: {video_url[:40]}...")
+        print(f"🔗 Video Link Found...")
 
         # Download
         r = requests.get(video_url, stream=True)
@@ -145,7 +128,7 @@ def download_via_sssinstagram(insta_link):
                 f.write(chunk)
         
         if os.path.getsize(video_path) < 50000:
-             raise Exception("File too small (Ad page detected).")
+             raise Exception("File too small.")
 
         return video_path, processed_caption
 
@@ -168,65 +151,77 @@ def upload_to_catbox(file_path):
             if r.status_code == 200: 
                 return r.text.strip()
             else:
-                print(f"⚠️ Catbox Error: {r.status_code} - {r.text}")
+                print(f"⚠️ Catbox Error: {r.status_code}")
                 return None
     except Exception as e:
         print(f"Upload Error: {e}")
     return None
 
 def send_notification(video_url, clean_text, original_link):
-    print("🚀 Preparing Notification...")
+    print("🚀 Preparing Post...")
     
-    # OLD HASHTAGS HATA DIYE, AB SEO WALE JOD RAHE HAIN
-    final_caption = f"{clean_text}{SEO_HASHTAGS}"
+    # --- 1. CAPTION FORMATTING ---
+    # User Requirement: Text -> . . . -> Hashtags
+    final_caption = f"{clean_text}\n.\n.\n.\n.\n.\n{SEO_HASHTAGS}"
     
-    # Message Body (Plain Text to avoid Markdown Errors)
-    msg = f"🎥 New Video\n\n📝 {final_caption}\n\n🔗 Download: {video_url}\n\n📌 Source: {original_link}"
-    
-    # --- TELEGRAM ---
+    # --- 2. TELEGRAM (Send VIDEO, Not Link) ---
     if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-        print(f"📨 Sending to Telegram...")
+        print(f"📨 Sending Video to Telegram...")
         try:
-            r = requests.post(
-                f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-                json={"chat_id": TELEGRAM_CHAT_ID, "text": msg}
-            )
-            print(f"Telegram Response: {r.status_code}")
+            # sendVideo endpoint use kar rahe hain
+            # 'video' parameter mein URL dene se Telegram khud download karke play karta hai
+            api_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
+            payload = {
+                "chat_id": TELEGRAM_CHAT_ID,
+                "video": video_url,  # Catbox URL (Telegram treats this as video file)
+                "caption": final_caption
+            }
+            r = requests.post(api_url, json=payload)
+            
+            if r.status_code == 200:
+                print("✅ Telegram Video Sent Successfully!")
+            else:
+                print(f"❌ Telegram Error {r.status_code}: {r.text}")
         except Exception as e:
             print(f"❌ Telegram Failed: {e}")
+    else:
+        print("⚠️ Telegram Config Missing.")
 
-    # --- WEBHOOK ---
+    # --- 3. WEBHOOK (Mandatory) ---
     if WEBHOOK_URL:
         print("📨 Sending to Webhook...")
         try:
             r = requests.post(WEBHOOK_URL, json={
-                "video": video_url, 
-                "caption": final_caption, 
+                "video_url": video_url, 
+                "caption": final_caption,
+                "raw_caption": clean_text,
                 "source": original_link
             })
-        except: pass
+            print(f"Webhook Status: {r.status_code}")
+        except Exception as e:
+            print(f"❌ Webhook Failed: {e}")
+    else:
+        print("❌ CRITICAL: WEBHOOK_URL is missing in Secrets!")
 
 def update_history(link):
     with open(HISTORY_FILE, 'a') as f: f.write(link + "\n")
 
 if __name__ == "__main__":
-    print("--- 🔍 CHECKING CONFIG ---")
-    if not TELEGRAM_BOT_TOKEN: print("❌ TELEGRAM_BOT_TOKEN Missing")
+    # Webhook Check (Optional nahi hai ab)
+    if not WEBHOOK_URL:
+        print("❌ ERROR: Webhook URL is REQUIRED but missing.")
     
     link = get_next_link()
     if link:
         print(f"🎯 Processing: {link}")
         
-        # 1. Download & Clean Caption
         video_file, clean_text = download_via_sssinstagram(link)
         
         if video_file and os.path.exists(video_file):
-            # 2. Upload
             catbox_link = upload_to_catbox(video_file)
             
             if catbox_link:
-                print(f"✅ Catbox Link: {catbox_link}")
-                # 3. Send (Clean Text + SEO Hashtags)
+                print(f"✅ Cloud Link: {catbox_link}")
                 send_notification(catbox_link, clean_text, link)
                 update_history(link)
                 os.remove(video_file)
