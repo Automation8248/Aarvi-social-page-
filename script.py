@@ -1,137 +1,141 @@
+import undetected_chromedriver as uc
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import time
+import random
 import os
 import requests
-import shutil
-import time
 
-# Configurations
-TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_TOKEN"]
-TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
-WEBHOOK_URL = os.environ["WEBHOOK_URL"]
-
+# --- CONFIGURATION (Secrets GitHub se aayenge) ---
 LINKS_FILE = "links.txt"
 HISTORY_FILE = "history.txt"
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("CHAT_ID")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-# Cobalt API Instance
-COBALT_API_URL = "https://api.cobalt.tools/api/json"
+def random_sleep(min_t=2, max_t=5):
+    time.sleep(random.uniform(min_t, max_t))
 
 def get_next_link():
-    if os.path.exists(HISTORY_FILE):
-        with open(HISTORY_FILE, "r") as f:
-            history = set(line.strip() for line in f)
-    else:
-        history = set()
+    if not os.path.exists(LINKS_FILE): return None
+    # History file agar nahi hai to create karo
+    if not os.path.exists(HISTORY_FILE): 
+        with open(HISTORY_FILE, 'w') as f: pass
 
-    with open(LINKS_FILE, "r") as f:
-        for line in f:
-            link = line.strip()
-            if link and link not in history:
-                return link
+    with open(LINKS_FILE, 'r') as f:
+        all_links = [l.strip() for l in f.readlines() if l.strip()]
+    with open(HISTORY_FILE, 'r') as f:
+        history = [l.strip() for l in f.readlines()]
+
+    for link in all_links:
+        if link not in history: return link
     return None
 
-def download_via_cobalt(link):
-    print(f"Requesting Cobalt API for: {link}")
+def download_via_browser_stealth(insta_link):
+    print("🕵️ Launching Stealth Browser on GitHub...")
     
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json"
-    }
+    options = uc.ChromeOptions()
+    # GitHub Server settings (IMPORTANT)
+    options.add_argument("--headless=new") # Naye Chrome ka headless mode (Detection kam hoti hai)
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--window-size=1920,1080")
     
-    payload = {
-        "url": link,
-        "vCodec": "h264",
-        "vQuality": "720",
-        "filenamePattern": "basic"
-    }
-
+    driver = uc.Chrome(options=options, version_main=None)
+    video_path = "final_video.mp4"
+    
     try:
-        response = requests.post(COBALT_API_URL, json=payload, headers=headers)
-        data = response.json()
+        print("🌍 Opening SnapInsta...")
+        driver.get("https://snapinsta.app/")
+        random_sleep(3, 5)
+
+        print("✍️ Pasting Link...")
+        input_box = driver.find_element(By.ID, "url")
+        input_box.send_keys(insta_link)
+        random_sleep(1, 3)
+
+        print("🖱️ Clicking Download...")
+        try:
+            btn = driver.find_element(By.CLASS_NAME, "btn-get-content")
+            # JavaScript click is safer in headless
+            driver.execute_script("arguments[0].click();", btn)
+        except:
+            input_box.send_keys(Keys.ENTER)
+
+        random_sleep(6, 10) # Processing Wait
+
+        # Ad Handling logic for Headless
+        if len(driver.window_handles) > 1:
+            driver.switch_to.window(driver.window_handles[1])
+            driver.close()
+            driver.switch_to.window(driver.window_handles[0])
+
+        print("📥 Finding Final Video Link...")
+        download_btn = WebDriverWait(driver, 20).until(
+            EC.presence_of_element_located((By.XPATH, "//a[contains(@class, 'download-bottom')]"))
+        )
+        video_url = download_btn.get_attribute("href")
+        print(f"✅ URL Found: {video_url[:30]}...")
+
+        # Download
+        r = requests.get(video_url, stream=True)
+        with open(video_path, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=1024):
+                f.write(chunk)
         
-        if "url" in data:
-            video_url = data["url"]
-            print("Video URL found via Cobalt.")
-            
-            if not os.path.exists("downloads"):
-                os.makedirs("downloads")
-            
-            video_path = "downloads/video.mp4"
-            
-            with requests.get(video_url, stream=True) as r:
-                r.raise_for_status()
-                with open(video_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
-            
-            return video_path
-        else:
-            print(f"Cobalt API Error: {data}")
-            return None
-            
+        return video_path
+
     except Exception as e:
-        print(f"Error connecting to Cobalt: {e}")
+        print(f"❌ Browser Error: {e}")
+        # Debugging: Screenshot save karo agar fail ho
+        driver.save_screenshot("error_screenshot.png")
         return None
+    finally:
+        driver.quit()
 
 def upload_to_catbox(file_path):
-    print("Uploading to Catbox.moe...")
-    url = "https://catbox.moe/user/api.php"
+    print("☁️ Uploading to Catbox...")
     try:
         with open(file_path, "rb") as f:
-            payload = {"reqtype": "fileupload"}
-            files = {"fileToUpload": f}
-            response = requests.post(url, data=payload, files=files)
-            
-            if response.status_code == 200:
-                return response.text.strip()
-            else:
-                print(f"Catbox Error: {response.text}")
-                return None
+            r = requests.post("https://catbox.moe/user/api.php", 
+                            data={"reqtype": "fileupload"}, 
+                            files={"fileToUpload": f})
+            if r.status_code == 200: return r.text.strip()
     except Exception as e:
-        print(f"Upload Exception: {e}")
-        return None
+        print(f"Upload Error: {e}")
+    return None
 
-def post_to_telegram(catbox_link, caption):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
-    payload = {
-        'chat_id': TELEGRAM_CHAT_ID, 
-        'video': catbox_link, 
-        'caption': caption
-    }
-    requests.post(url, data=payload)
-
-def trigger_webhook(original_link, catbox_link, caption):
-    data = {
-        "original_link": original_link,
-        "catbox_url": catbox_link,
-        "caption": caption
-    }
-    requests.post(WEBHOOK_URL, json=data)
+def send_notification(video_url, original_link):
+    msg = f"🎥 **New Video Processed**\n\n🔗 **Download:** {video_url}\n\n📌 **Source:** {original_link}"
+    if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
+        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                      json={"chat_id": TELEGRAM_CHAT_ID, "text": msg, "parse_mode": "Markdown"})
+    if WEBHOOK_URL:
+        requests.post(WEBHOOK_URL, json={"video": video_url, "source": original_link})
 
 def update_history(link):
-    with open(HISTORY_FILE, "a") as f:
-        f.write(f"{link}\n")
+    # Sirf file update karo, GitHub Commit workflow karega
+    with open(HISTORY_FILE, 'a') as f: f.write(link + "\n")
 
 if __name__ == "__main__":
     link = get_next_link()
-    
     if link:
-        print(f"Processing: {link}")
+        print(f"🎯 Processing: {link}")
+        video_file = download_via_browser_stealth(link)
         
-        caption = f"New Reel! 🔥\n\nSource: {link}"
-        
-        video_path = download_via_cobalt(link)
-        
-        if video_path:
-            catbox_url = upload_to_catbox(video_path)
-            
-            if catbox_url:
-                print(f"Catbox Link: {catbox_url}")
-                post_to_telegram(catbox_url, caption)
-                trigger_webhook(link, catbox_url, caption)
+        if video_file and os.path.exists(video_file):
+            catbox_link = upload_to_catbox(video_file)
+            if catbox_link:
+                print(f"✅ Done: {catbox_link}")
+                send_notification(catbox_link, link)
                 update_history(link)
-                shutil.rmtree("downloads")
+                os.remove(video_file)
             else:
-                print("Failed to upload to Catbox.")
+                print("❌ Catbox Upload Failed.")
         else:
-            print("Failed to download video via API.")
+            print("❌ Download Failed.")
+            exit(1) # Error code taaki GitHub ko pata chale fail hua
     else:
-        print("No new links found.")
+        print("💤 No new links.")
