@@ -32,63 +32,65 @@ def get_next_link():
         if link not in history: return link
     return None
 
-def download_via_fastdl(insta_link):
-    print("🕵️ Launching Stealth Browser (Target: FastDL)...")
+def download_via_saveclip(insta_link):
+    print("🕵️ Launching Browser (Target: SaveClip.app)...")
     
     options = uc.ChromeOptions()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
-    # User Agent lagana zaroori hai taaki block na ho
+    # User Agent taaki bot na lage
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
     
     driver = uc.Chrome(options=options, version_main=None)
     video_path = "final_video.mp4"
     
     try:
-        # Website Change: SnapInsta -> FastDl (More stable on GitHub)
-        print("🌍 Opening FastDL...")
-        driver.get("https://fastdl.app/en")
+        print("🌍 Opening SaveClip.app...")
+        driver.get("https://saveclip.app/en")
         random_sleep(3, 5)
 
         print("✍️ Pasting Link...")
-        # Smart Selector: Input box dhundo
+        # SaveClip ka input box dhundo
         try:
-            input_box = driver.find_element(By.ID, "search-form-input")
+            input_box = driver.find_element(By.ID, "url")
         except:
-            # Fallback: Agar ID change ho gayi to tag se dhundo
-            input_box = driver.find_element(By.CSS_SELECTOR, "input[type='text']")
+            # Fallback agar ID change ho
+            input_box = driver.find_element(By.CSS_SELECTOR, "input[placeholder*='Paste']")
             
+        input_box.click()
         input_box.send_keys(insta_link)
         random_sleep(1, 3)
 
         print("🖱️ Clicking Download...")
-        try:
-            # Button dhundo
-            btn = driver.find_element(By.CLASS_NAME, "search-form__button")
-            driver.execute_script("arguments[0].click();", btn)
-        except:
-            input_box.send_keys(Keys.ENTER)
+        # Input box mein Enter marna sabse safe hota hai
+        input_box.send_keys(Keys.ENTER)
 
         # Processing Wait
         random_sleep(5, 8) 
 
+        # Ad Popup Handling
+        if len(driver.window_handles) > 1:
+            driver.switch_to.window(driver.window_handles[1])
+            driver.close()
+            driver.switch_to.window(driver.window_handles[0])
+
         print("📥 Finding Final Video Link...")
-        # Download link dhundo (FastDL specific)
+        # SaveClip par download button 'is-success' class ke sath aata hai
         try:
             download_btn = WebDriverWait(driver, 20).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "a.download-item__btn"))
+                EC.presence_of_element_located((By.CSS_SELECTOR, "a.button.is-success"))
             )
             video_url = download_btn.get_attribute("href")
         except:
-            # Fallback for other sites logic
-            print("⚠️ Standard button not found, trying generic search...")
+            # Fallback strategy
+            print("⚠️ Standard button not found, searching specifically for mp4 links...")
             links = driver.find_elements(By.TAG_NAME, "a")
             video_url = None
             for l in links:
                 href = l.get_attribute("href")
-                if href and ".mp4" in href:
+                if href and "download" in href: # SaveClip urls often have 'download' keyword
                     video_url = href
                     break
         
@@ -138,7 +140,7 @@ if __name__ == "__main__":
     link = get_next_link()
     if link:
         print(f"🎯 Processing: {link}")
-        video_file = download_via_fastdl(link)
+        video_file = download_via_saveclip(link)
         
         if video_file and os.path.exists(video_file):
             catbox_link = upload_to_catbox(video_file)
