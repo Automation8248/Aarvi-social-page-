@@ -1,15 +1,17 @@
-name: Aarvi Page 
+name: Daily Insta Bot
 
 on:
   schedule:
-    # Daily at 10:00 AM UTC (Adjust as needed)
-    - cron: '0 10 * * *'
-  workflow_dispatch: # Allows manual trigger for testing
+    - cron: '0 5 * * *' # Daily at 5:00 AM UTC (India ke liye subah 10:30)
+  workflow_dispatch: # Button to run manually
+
+permissions:
+  contents: write # Permission to save history.txt back to repo
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -17,23 +19,41 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: '3.10'
+
+      - name: Install Google Chrome
+        run: |
+          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable
 
       - name: Install Dependencies
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
-      - name: Run Automation Script
+      - name: Run Python Script
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: python script.py
 
-      - name: Commit History Changes
+      - name: Commit and Push History
+        # Ye step tabhi chalega agar script successfully chali ho
+        if: success()
         run: |
-          git config --global user.name "GitHub Action Bot"
-          git config --global user.email "actions@github.com"
+          git config --global user.name "Automation Bot"
+          git config --global user.email "bot@github.com"
           git add history.txt
-          # Sirf tab commit kare agar changes hue hain
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Update history.txt [skip ci]" && git push)
+          # Agar koi change nahi hai to error mat do
+          git commit -m "Update history: Processed new video" || exit 0
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Upload Error Screenshot (If Failed)
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: debug-screenshot
+          path: error_screenshot.png
