@@ -14,10 +14,10 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4  # <-- Updated to v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5 # <-- Updated to v5
         with:
           python-version: '3.10'
 
@@ -33,7 +33,6 @@ jobs:
 
       - name: Run Python Script
         env:
-          # Yahan par maine names update kar diye hain
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
@@ -52,7 +51,7 @@ jobs:
       
       - name: Upload Error Screenshot (If Failed)
         if: failure()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4 # <-- Ye wala error de raha tha, ab v4 kar diya hai
         with:
           name: debug-screenshot
           path: error_screenshot.png
