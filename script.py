@@ -32,96 +32,94 @@ def get_next_link():
         if link not in history: return link
     return None
 
-def download_via_sssinstagram(insta_link):
-    print("🕵️ Launching Browser (Target: SSSInstagram)...")
+def download_via_snapinsta(insta_link):
+    print("🕵️ Launching Browser (Target: SnapInsta)...")
     
     options = uc.ChromeOptions()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
-    # User Agent lagana zaroori hai
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
     
     driver = uc.Chrome(options=options, version_main=None)
     video_path = "final_video.mp4"
     
     try:
-        print("🌍 Opening sssinstagram.com...")
-        driver.get("https://sssinstagram.com/en")
+        print("🌍 Opening SnapInsta.app...")
+        driver.get("https://snapinsta.app/")
         random_sleep(3, 5)
 
         print("✍️ Pasting Link...")
-        # SSSInstagram ka Input Box ID 'main_page_text' hota hai usually
         try:
-            input_box = driver.find_element(By.ID, "main_page_text")
+            input_box = driver.find_element(By.ID, "url")
         except:
-            # Fallback agar ID change ho jaye
-            input_box = driver.find_element(By.CSS_SELECTOR, "input[placeholder*='Paste']")
+            input_box = driver.find_element(By.NAME, "url")
             
         input_box.click()
         input_box.send_keys(insta_link)
         random_sleep(1, 2)
 
         print("🖱️ Clicking Download...")
-        # Button ID 'submit' hota hai
         try:
-            submit_btn = driver.find_element(By.ID, "submit")
-            driver.execute_script("arguments[0].click();", submit_btn)
+            # SnapInsta button
+            btn = driver.find_element(By.CLASS_NAME, "btn-get-content")
+            driver.execute_script("arguments[0].click();", btn)
         except:
             input_box.send_keys(Keys.ENTER)
 
-        print("⏳ Waiting 5 seconds for result...")
-        time.sleep(5) # User request: 3-5 sec wait
+        print("⏳ Waiting 10-15 seconds for processing...")
+        # Processing time badha diya hai taaki fail na ho
+        time.sleep(12) 
 
-        # Ad Popup Handling (Agar click karne par naya tab khule)
+        # Ad Popup Handling (Important for SnapInsta)
         if len(driver.window_handles) > 1:
+            print("🚫 Closing Ad Tab...")
             driver.switch_to.window(driver.window_handles[1])
             driver.close()
             driver.switch_to.window(driver.window_handles[0])
 
-        print("📥 Finding Download Button...")
-        
+        print("📥 Finding Real Video Link...")
         video_url = None
         
-        # SSSInstagram par result "download_link" class wale buttons mein aata hai
+        # SMART FINDER LOGIC:
+        # 1. Try Specific Download Button
         try:
-            # Wait for download links to appear
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "a.download_link, a.btn-success"))
-            )
-            
-            # Find all download buttons
-            buttons = driver.find_elements(By.TAG_NAME, "a")
-            
-            for btn in buttons:
-                text = btn.text.lower()
-                href = btn.get_attribute("href")
-                
-                # Logic: Link hona chahiye, 'sssinstagram' domain nahi hona chahiye (direct CDN link), aur text mein 'download' ho
-                if href and "http" in href and "sssinstagram.com" not in href:
-                    if "download" in text or "mp4" in text:
-                        video_url = href
-                        break
-        except Exception as e:
-            print(f"⚠️ Button search warning: {e}")
+            download_btn = driver.find_element(By.XPATH, "//a[contains(@href, 'googlevideo') or contains(@href, 'cdninstagram')]")
+            video_url = download_btn.get_attribute("href")
+        except:
+            pass
+
+        # 2. If failed, scan ALL links on page
+        if not video_url:
+            print("⚠️ Direct button not found, scanning all links...")
+            links = driver.find_elements(By.TAG_NAME, "a")
+            for l in links:
+                href = l.get_attribute("href")
+                if href and ("googlevideo" in href or "snapinsta" in href):
+                    # Ignore generic page links
+                    if "download.php" in href or "facebook.com" in href: continue
+                    video_url = href
+                    break
 
         if not video_url: 
-            print("❌ Valid Video URL nahi mila. Page dump check kar raha hun...")
+            print("❌ Valid Video URL nahi mila. Page HTML dump check kar raha hun...")
+            # Debugging: Print page source snippet
+            print(driver.page_source[:500])
             raise Exception("Video URL Not Found")
 
         print(f"✅ Real Video URL Found: {video_url[:40]}...")
 
-        # Download Logic
+        # Download
         print("💾 Downloading file...")
         r = requests.get(video_url, stream=True)
         with open(video_path, 'wb') as f:
             for chunk in r.iter_content(chunk_size=1024):
                 f.write(chunk)
         
-        # SAFETY CHECK: File size check (Agar 50KB se kam hai to wo video nahi HTML page hai)
+        # FILE SIZE CHECK
         file_size = os.path.getsize(video_path)
-        if file_size < 50000: 
+        if file_size < 100000: # < 100KB means error page
             raise Exception(f"File too small ({file_size} bytes). Download failed.")
             
         return video_path
@@ -164,8 +162,7 @@ if __name__ == "__main__":
     link = get_next_link()
     if link:
         print(f"🎯 Processing: {link}")
-        # Function name updated to use SSSInstagram
-        video_file = download_via_sssinstagram(link)
+        video_file = download_via_snapinsta(link)
         
         if video_file and os.path.exists(video_file):
             catbox_link = upload_to_catbox(video_file)
