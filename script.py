@@ -8,11 +8,13 @@ import random
 import os
 import requests
 
-# --- CONFIGURATION (Secrets GitHub se aayenge) ---
+# --- CONFIGURATION (Updated Names) ---
 LINKS_FILE = "links.txt"
 HISTORY_FILE = "history.txt"
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("CHAT_ID")
+
+# Yahan par maine aapke bataye hue naye names use kiye hain
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 def random_sleep(min_t=2, max_t=5):
@@ -20,7 +22,6 @@ def random_sleep(min_t=2, max_t=5):
 
 def get_next_link():
     if not os.path.exists(LINKS_FILE): return None
-    # History file agar nahi hai to create karo
     if not os.path.exists(HISTORY_FILE): 
         with open(HISTORY_FILE, 'w') as f: pass
 
@@ -37,8 +38,7 @@ def download_via_browser_stealth(insta_link):
     print("🕵️ Launching Stealth Browser on GitHub...")
     
     options = uc.ChromeOptions()
-    # GitHub Server settings (IMPORTANT)
-    options.add_argument("--headless=new") # Naye Chrome ka headless mode (Detection kam hoti hai)
+    options.add_argument("--headless=new") 
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
@@ -59,14 +59,13 @@ def download_via_browser_stealth(insta_link):
         print("🖱️ Clicking Download...")
         try:
             btn = driver.find_element(By.CLASS_NAME, "btn-get-content")
-            # JavaScript click is safer in headless
             driver.execute_script("arguments[0].click();", btn)
         except:
             input_box.send_keys(Keys.ENTER)
 
-        random_sleep(6, 10) # Processing Wait
+        random_sleep(6, 10) 
 
-        # Ad Handling logic for Headless
+        # Ad Handling
         if len(driver.window_handles) > 1:
             driver.switch_to.window(driver.window_handles[1])
             driver.close()
@@ -89,7 +88,6 @@ def download_via_browser_stealth(insta_link):
 
     except Exception as e:
         print(f"❌ Browser Error: {e}")
-        # Debugging: Screenshot save karo agar fail ho
         driver.save_screenshot("error_screenshot.png")
         return None
     finally:
@@ -109,14 +107,18 @@ def upload_to_catbox(file_path):
 
 def send_notification(video_url, original_link):
     msg = f"🎥 **New Video Processed**\n\n🔗 **Download:** {video_url}\n\n📌 **Source:** {original_link}"
-    if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
-        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+    
+    # Updated Variable Names Used Here
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+        print("🚀 Sending to Telegram...")
+        requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
                       json={"chat_id": TELEGRAM_CHAT_ID, "text": msg, "parse_mode": "Markdown"})
+    
     if WEBHOOK_URL:
+        print("🚀 Sending to Webhook...")
         requests.post(WEBHOOK_URL, json={"video": video_url, "source": original_link})
 
 def update_history(link):
-    # Sirf file update karo, GitHub Commit workflow karega
     with open(HISTORY_FILE, 'a') as f: f.write(link + "\n")
 
 if __name__ == "__main__":
@@ -136,6 +138,6 @@ if __name__ == "__main__":
                 print("❌ Catbox Upload Failed.")
         else:
             print("❌ Download Failed.")
-            exit(1) # Error code taaki GitHub ko pata chale fail hua
+            exit(1)
     else:
         print("💤 No new links.")
