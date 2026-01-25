@@ -2,11 +2,11 @@ name: Daily Insta Bot
 
 on:
   schedule:
-    - cron: '0 5 * * *' # Daily at 5:00 AM UTC (India ke liye subah 10:30)
-  workflow_dispatch: # Button to run manually
+    - cron: '0 5 * * *' 
+  workflow_dispatch: 
 
 permissions:
-  contents: write # Permission to save history.txt back to repo
+  contents: write 
 
 jobs:
   run-bot:
@@ -33,19 +33,18 @@ jobs:
 
       - name: Run Python Script
         env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          CHAT_ID: ${{ secrets.CHAT_ID }}
+          # Yahan par maine names update kar diye hain
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: python script.py
 
       - name: Commit and Push History
-        # Ye step tabhi chalega agar script successfully chali ho
         if: success()
         run: |
           git config --global user.name "Automation Bot"
           git config --global user.email "bot@github.com"
           git add history.txt
-          # Agar koi change nahi hai to error mat do
           git commit -m "Update history: Processed new video" || exit 0
           git push
         env:
