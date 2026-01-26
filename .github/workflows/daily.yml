@@ -1,12 +1,13 @@
-name: Daily Insta Bot
+name: Aarvi page 
 
 on:
   schedule:
-    - cron: '0 5 * * *' 
-  workflow_dispatch: 
+    # UTC 10:30 = IST 4:00 PM
+    - cron: '30 10 * * *'
+  workflow_dispatch: # Manual Run Button
 
 permissions:
-  contents: write 
+  contents: write # History file update karne ke liye zaroori
 
 jobs:
   run-bot:
@@ -14,10 +15,10 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4  # <-- Updated
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5 # <-- Updated
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
@@ -29,7 +30,9 @@ jobs:
           sudo apt-get install -y google-chrome-stable
 
       - name: Install Dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: Run Python Script
         env:
@@ -44,6 +47,7 @@ jobs:
           git config --global user.name "Automation Bot"
           git config --global user.email "bot@github.com"
           git add history.txt
+          # Agar koi change nahi hai to error mat do, bas aage badho
           git commit -m "Update history: Processed new video" || exit 0
           git push
         env:
@@ -51,7 +55,7 @@ jobs:
       
       - name: Upload Error Screenshot (If Failed)
         if: failure()
-        uses: actions/upload-artifact@v4 # <-- Updated to v4 (Fixes Screenshot 1)
+        uses: actions/upload-artifact@v4
         with:
           name: debug-screenshot
-          path: error_screenshot.png
+          path: error_debug.png
