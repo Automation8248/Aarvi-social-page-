@@ -2,17 +2,22 @@ name: Daily Insta Bot
 
 on:
   schedule:
-    # 12:30 UTC = 6:00 PM IST (India Time)
-    - cron: '30 12 * * *'
-  workflow_dispatch: # Manual Run ke liye button
+    # 6:00 UTC = 11:30 AM IST (India Time)
+    - cron: '0 6 * * *'
+  workflow_dispatch: # Manual Run Button
+
+# ✅ Force run: new run will cancel old in-progress run
+concurrency:
+  group: daily-insta-bot
+  cancel-in-progress: true
 
 permissions:
-  contents: write # History file update karne ki permission
+  contents: write
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 15 # Agar 15 min se zyada laga to band karke fail karega (Safety)
+    timeout-minutes: 15
 
     steps:
       - name: Checkout Code
@@ -23,39 +28,55 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install Chrome Browser
+      - name: Install Google Chrome
         run: |
           wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
           sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
           sudo apt-get update
           sudo apt-get install -y google-chrome-stable
 
-      - name: Install Python Libraries
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Automation Script
+      # ✅ Force run: retry if script fails (3 attempts)
+      - name: Run Python Script
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
-        run: python script.py
+        run: |
+          set -e
+          for i in 1 2 3; do
+            echo "▶️ Running script attempt $i/3..."
+            if python script.py; then
+              echo "✅ Script succeeded on attempt $i"
+              break
+            fi
+            echo "❌ Script failed on attempt $i"
+            if [ "$i" -eq 3 ]; then
+              echo "🛑 All attempts failed"
+              exit 1
+            fi
+            echo "⏳ Retrying in 20 seconds..."
+            sleep 20
+          done
 
       - name: Save History
         if: success()
         run: |
-          git config --global user.name "AutoBot"
+          git config --global user.name "Automation Bot"
           git config --global user.email "bot@github.com"
           git add history.txt
-          git commit -m "Done: Video Processed" || exit 0
+          git commit -m "Video Processed" || exit 0
           git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: Upload Error Log (Agar Fail Hua)
+      - name: Upload Error Log
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: error-proof
+          name: error-debug
           path: error_debug.png
