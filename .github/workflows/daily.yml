@@ -2,8 +2,8 @@ name: Daily Insta Bot
 
 on:
   schedule:
-    # 6:00 UTC = 11:30 AM IST (India Time)
-    - cron: '0 6 * * *'
+    # 3:00 UTC = 8:30 AM IST (India Time)
+    - cron: '0 3 * * *'
   workflow_dispatch: # Manual Run Button
 
 # ✅ Force run: new run will cancel old in-progress run
