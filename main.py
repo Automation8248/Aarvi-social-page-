@@ -1,7 +1,7 @@
 import os
 import requests
 
-# आपके GitHub Secrets के नाम
+# GitHub Secrets
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
@@ -18,17 +18,17 @@ def upload_to_catbox(file_path):
 
 def main():
     if not os.path.exists(VIDEO_DIR):
-        print("Videos folder nahi mila")
+        print("Folder nahi mila")
         return
 
-    # फोल्डर से वीडियो फाइल ढूंढना
-    video_files = [f for f in os.listdir(VIDEO_DIR) if f.lower().endswith(('.mp4', '.mkv', '.mov'))]
+    # फोल्डर के अंदर से फाइल्स की लिस्ट लेना
+    video_files = sorted([f for f in os.listdir(VIDEO_DIR) if f.lower().endswith(('.mp4', '.mkv', '.mov'))])
     
     if not video_files:
-        print("Koi video nahi bacha hai")
+        print("Koi video bacha nahi hai")
         return
 
-    # पहली वीडियो फाइल चुनें
+    # सिर्फ पहली वीडियो फाइल चुनना
     video_to_upload = video_files[0]
     file_path = os.path.join(VIDEO_DIR, video_to_upload)
 
@@ -36,11 +36,10 @@ def main():
         # Catbox पर अपलोड
         catbox_link = upload_to_catbox(file_path)
         
-        # SEO Hashtags (जो सबसे ज्यादा इस्तेमाल होते हैं)
+        # SEO Hashtags
         seo_hashtags = "#trending #viral #foryou #explore #instagram #reels #video #tiktok #fyp"
 
-        # आपके बताए हुए नए फॉर्मेट में कैप्शन
-        # Content -> Caption -> Dots -> SEO Hashtags
+        # आपका पसंदीदा फॉर्मेट
         caption = (
             f"Content\n"
             f"New video uploaded successfully\n"
@@ -54,18 +53,18 @@ def main():
             f"Watch here: {catbox_link}"
         )
 
-        # Telegram पर भेजना
+        # Telegram Send
         if BOT_TOKEN and CHAT_ID:
-            tg_url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-            requests.post(tg_url, json={"chat_id": CHAT_ID, "text": caption})
+            requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage", json={"chat_id": CHAT_ID, "text": caption})
 
-        # Webhook पर भेजना
+        # Webhook Send
         if WEBHOOK_URL:
             requests.post(WEBHOOK_URL, json={"content": caption})
 
-        # फाइल डिलीट करना
-        os.remove(file_path)
-        print(f"Post ho gaya aur {video_to_upload} delete kar di gayi")
+        # सिर्फ उस एक फाइल को डिलीट करना (पूरा फोल्डर नहीं)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            print(f"Success: {video_to_upload} delete ho gayi hai.")
 
     except Exception as e:
         print(f"Error: {e}")
