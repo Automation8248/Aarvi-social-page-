@@ -36,8 +36,23 @@ def main():
         # Catbox पर अपलोड
         catbox_link = upload_to_catbox(file_path)
         
-        # सादा कैप्शन (बिना # और बिना *)
-        caption = f"New Trending Video \n\nDirect Link: {catbox_link} \n\nDaily Video Update"
+        # SEO Hashtags (जो सबसे ज्यादा इस्तेमाल होते हैं)
+        seo_hashtags = "#trending #viral #foryou #explore #instagram #reels #video #tiktok #fyp"
+
+        # आपके बताए हुए नए फॉर्मेट में कैप्शन
+        # Content -> Caption -> Dots -> SEO Hashtags
+        caption = (
+            f"Content\n"
+            f"New video uploaded successfully\n"
+            f".\n"
+            f".\n"
+            f".\n"
+            f".\n"
+            f".\n"
+            f".\n"
+            f"{seo_hashtags}\n\n"
+            f"Watch here: {catbox_link}"
+        )
 
         # Telegram पर भेजना
         if BOT_TOKEN and CHAT_ID:
