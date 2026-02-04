@@ -29,11 +29,11 @@ jobs:
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: python main.py
 
-      - name: Commit and Push Deletion
+      - name: Save Deletion (Only File, Not Folder)
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          # 'git add -A' इस्तेमाल करने से केवल वो फाइल रिमूव होगी जो स्क्रिप्ट ने डिलीट की है
-          git add -A
-          git commit -m "System: Removed only the processed video file" || echo "No changes to commit"
+          # -u flag केवल उन फाइल्स को अपडेट/रिमूव करेगा जो डिलीट हुई हैं
+          git add -u
+          git commit -m "System: Removed only the processed video file" || exit 0
           git push
