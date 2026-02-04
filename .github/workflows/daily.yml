@@ -2,8 +2,8 @@ name: Daily Video Post
 
 on:
   schedule:
-    - cron: '0 5 * * *' # हर दिन सुबह (IST के अनुसार दोपहर के आसपास)
-  workflow_dispatch: # बटन दबाकर तुरंत चलाने के लिए
+    - cron: '0 5 * * *' 
+  workflow_dispatch:
 
 jobs:
   run-automation:
@@ -11,6 +11,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
+        with:
+          persist-credentials: true
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -27,10 +29,11 @@ jobs:
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         run: python main.py
 
-      - name: Sync Deletion to Repo
+      - name: Commit and Push Deletion
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add videos/
-          git commit -m "Video processed and removed" || exit 0
+          # 'git add -A' इस्तेमाल करने से केवल वो फाइल रिमूव होगी जो स्क्रिप्ट ने डिलीट की है
+          git add -A
+          git commit -m "System: Removed only the processed video file" || echo "No changes to commit"
           git push
